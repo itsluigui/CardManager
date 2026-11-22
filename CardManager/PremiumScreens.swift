@@ -122,7 +122,7 @@ struct CMCardFace: View {
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(account.kind.rawValue.uppercased()).font(.system(size: 9, weight: .semibold)).tracking(1.4).opacity(0.75)
-                        Text(compact ? "••••  " + String(account.id.uuidString.suffix(4)) : peso(account.available))
+                        Text(compact ? (account.kind == .debit ? "CUENTA DE DÉBITO" : "TARJETA DE CRÉDITO") : peso(account.available))
                             .font(.system(size: compact ? 13 : 22, weight: .bold, design: .rounded))
                             .lineLimit(1).minimumScaleFactor(0.65)
                     }
@@ -477,13 +477,13 @@ struct PremiumWallet: View {
                                         }
                                         Spacer()
                                         VStack(alignment: .trailing) {
-                                            Text("Utilizado").font(.caption).foregroundStyle(.secondary)
-                                            Text(peso(account.used)).font(.headline)
+                                            Text(account.kind == .debit ? "Dinero propio" : "Utilizado").font(.caption).foregroundStyle(.secondary)
+                                            Text(peso(account.kind == .debit ? account.available : account.used)).font(.headline)
                                         }
                                     }
                                     NavigationLink(destination: AccountDetailView(accountID: account.id)) {
                                         HStack {
-                                            Text("Ver detalles, MSI y editar")
+                                            Text(account.kind == .debit ? "Ver saldo y movimientos" : "Ver detalles y mensualidades")
                                             Spacer()
                                             Image(systemName: "arrow.up.right")
                                         }.font(.subheadline.bold()).foregroundStyle(Color.cmGreen)
@@ -492,7 +492,7 @@ struct PremiumWallet: View {
                             }
                         }
                     }
-                }.padding(18)
+                }.padding(18).padding(.bottom, 110)
             }
             .background(Color.cmBackground.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
@@ -703,7 +703,7 @@ struct PremiumCalendar: View {
                             CMBrandBadge(account: a, size: 35)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(a.name).font(.subheadline.bold())
-                                Text("Corte: \(a.closingDay) · Pago: \(a.paymentDay)").font(.caption).foregroundStyle(.secondary)
+                                Text(a.kind == .loan ? "Cuota habitual: día \(a.paymentDay)" : "Corte: \(a.closingDay) · Pago: \(a.paymentDay)").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                         }.padding(12).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 14))
@@ -736,8 +736,9 @@ struct PremiumMore: View {
                 VStack(alignment: .leading, spacing: 18) {
                     PremiumSectionHeading(eyebrow: "Configuración", title: "Más", subtitle: "Herramientas, seguridad y respaldos", icon: "slider.horizontal.3")
                     Text("CARD MANAGER  /  PRO").font(.caption2.bold()).tracking(2).foregroundStyle(Color.cmGreen)
-                    NavigationLink(destination: PremiumWallet()) { moreRow("Wallet", "square.stack.fill", "Tarjetas seleccionables") }
-                    NavigationLink(destination: DebitAccountsView()) { moreRow("Mi dinero y débito", "banknote.fill", "Saldos y transferencias propias") }
+                    NavigationLink(destination: StudioWallet()) { moreRow("Wallet", "square.stack.fill", "Tarjetas con vista premium") }
+                    NavigationLink(destination: StudioDebit()) { moreRow("Mi dinero y débito", "banknote.fill", "Depósitos, salidas y transferencias") }
+                    NavigationLink(destination: StudioMonthPlan()) { moreRow("Planeador mensual", "calendar.badge.clock", "Pagos confirmados y cuotas del mes") }
                     NavigationLink(destination: LoanOverviewView()) { moreRow("Mis préstamos", "building.columns.fill", "Deuda y calendarios de cuotas") }
                     NavigationLink(destination: CreditHealthView()) { moreRow("Salud crediticia", "heart.text.square.fill", "Utilización y recomendaciones") }
                     Button { calendar = true } label: { moreRow("Calendario", "calendar", "Fechas de corte y pago") }
@@ -757,8 +758,8 @@ struct PremiumMore: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    Text("Card Manager Pro · 1.8.0 · Versión de prueba").font(.caption2).foregroundStyle(.secondary)
-                }.padding(18).padding(.bottom, 75)
+                    Text("Card Manager Pro · 1.0.2 · Studio Beta").font(.caption2).foregroundStyle(.secondary)
+                }.padding(18).padding(.bottom, 125)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(isPresented: $calendar) { PremiumCalendar() }

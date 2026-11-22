@@ -8,10 +8,10 @@ private func money(_ value: Double) -> String {
 struct RootView: View {
     var body: some View {
         TabView {
-            PremiumHome().tabItem { Label("Inicio", systemImage: "house.fill") }
-            PremiumAccounts().tabItem { Label("Tarjetas", systemImage: "creditcard.fill") }
-            PremiumMovements().tabItem { Label("Movimientos", systemImage: "arrow.left.arrow.right") }
-            PremiumAnalytics().tabItem { Label("Análisis", systemImage: "chart.bar.fill") }
+            StudioHome().tabItem { Label("Inicio", systemImage: "house.fill") }
+            StudioAccounts().tabItem { Label("Tarjetas", systemImage: "creditcard.fill") }
+            StudioTransactions().tabItem { Label("Movimientos", systemImage: "arrow.left.arrow.right") }
+            StudioAnalytics().tabItem { Label("Análisis", systemImage: "chart.bar.fill") }
             PremiumMore().tabItem { Label("Más", systemImage: "ellipsis") }
         }
         .tint(Color.cmGreen)
@@ -133,49 +133,8 @@ struct AccountsView: View {
 }
 
 struct AccountDetailView: View {
-    @EnvironmentObject private var store: FinanceStore
     let accountID: UUID
-    @State private var editing = false
-    @State private var editingMovement: FinanceMovement?
-    var body: some View {
-        Group {
-            if let account = store.accounts.first(where: { $0.id == accountID }) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            LabeledContent("Tipo", value: account.kind.rawValue)
-                            LabeledContent("Banco", value: BankCatalog.name(for: account.bankID))
-                            LabeledContent("Red", value: account.network)
-                            LabeledContent("Límite / saldo inicial", value: money(account.limit))
-                            LabeledContent("Usado", value: money(account.used))
-                            LabeledContent("Disponible", value: money(account.available))
-                            LabeledContent("Corte", value: "Día \(account.closingDay)")
-                            LabeledContent("Pago", value: "Día \(account.paymentDay)")
-                        }.padding(16).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
-                        AccountPlansSection(account: account)
-                        Text("Movimientos").font(.headline)
-                        ForEach(store.movements.filter { $0.accountID == accountID }) { m in
-                            HStack {
-                                VStack(alignment: .leading) {
-                                    Text(m.title)
-                                    Text(m.date, style: .date).font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(money(m.amount))
-                            }.padding(12)
-                            .contentShape(Rectangle())
-                            .onTapGesture { editingMovement = m }.background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 12))
-                        }
-                    }.padding(16)
-                }
-                .background(Color.cmBackground.ignoresSafeArea())
-                .navigationTitle(account.name)
-                .toolbar { Button("Editar") { editing = true } }
-                .sheet(isPresented: $editing) { EditAccountView(account: account) }
-                .sheet(item: $editingMovement) { AddMovementView(existing: $0) }
-            } else { ContentUnavailableView("Cuenta no encontrada", systemImage: "exclamationmark.circle") }
-        }
-    }
+    var body: some View { ProAccountDetail(accountID: accountID) }
 }
 
 struct EditAccountView: View {
@@ -195,7 +154,7 @@ struct EditAccountView: View {
         self.account = account
         _name = State(initialValue: account.name)
         _kind = State(initialValue: account.kind)
-        _limit = State(initialValue: String(account.limit))
+        _limit = State(initialValue: String(account.kind == .debit ? account.available : account.limit))
         _used = State(initialValue: String(account.used))
         _closingDay = State(initialValue: account.closingDay)
         _paymentDay = State(initialValue: account.paymentDay)
@@ -210,18 +169,31 @@ struct EditAccountView: View {
     var body: some View {
         NavigationStack {
             Form {
-                BankSelector(selection: $bankID)
-                Picker("Red", selection: $network) { ForEach(CardNetworks.names, id: \.self) { Text($0).tag($0) } }
-                TextField("Nombre", text: $name)
-                Picker("Tipo", selection: $kind) {
-                    ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) }
+                Section("Identidad") {
+                    BankSelector(selection: $bankID)
+                    TextField("Nombre", text: $name)
+                    Picker("Tipo de producto", selection: $kind) {
+                        ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) }
+                    }.disabled(true)
+                    if kind != .loan { Picker("Red", selection: $network) { ForEach(CardNetworks.names, id: \.self) { Text($0).tag($0) } } }
                 }
-                TextField(kind == .debit ? "Saldo de débito" : "Límite / monto original", text: $limit).keyboardType(.decimalPad)
-                TextField(kind == .debit ? "Ajuste del saldo (normalmente 0)" : "Monto utilizado / deuda", text: $used).keyboardType(.decimalPad)
-                Stepper("Día de corte: \(closingDay)", value: $closingDay, in: 1...31)
-                Stepper("Día de pago: \(paymentDay)", value: $paymentDay, in: 1...31)
-                Text("Corregir el monto utilizado no altera el historial de movimientos.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Section(kind == .debit ? "Tu dinero" : "Saldo del producto") {
+                    TextField(kind == .debit ? "Saldo disponible real" : (kind == .loan ? "Importe original" : "Límite de crédito"), text: $limit).keyboardType(.decimalPad)
+                    if kind != .debit { TextField("Deuda registrada", text: $used).keyboardType(.decimalPad) }
+                    Text(kind == .debit ? "Actualizar el saldo es una conciliación manual. Los movimientos anteriores se conservan." : "Modificar directamente la deuda no crea un movimiento en el historial.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if kind == .credit {
+                    Section("Facturación") {
+                        Stepper("Día de corte: \(closingDay)", value: $closingDay, in: 1...31)
+                        Stepper("Día de pago: \(paymentDay)", value: $paymentDay, in: 1...31)
+                    }
+                } else if kind == .loan {
+                    Section("Vencimiento") {
+                        Stepper("Día habitual: \(paymentDay)", value: $paymentDay, in: 1...31)
+                        Text("Las fechas exactas se administran en el calendario de cuotas.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             .navigationTitle("Editar tarjeta")
             .toolbar {
@@ -234,8 +206,8 @@ struct EditAccountView: View {
                         var updated = account
                         updated.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         updated.kind = kind
-                        updated.limit = newLimit
-                        updated.used = newUsed
+                        updated.limit = kind == .debit ? account.limit : newLimit
+                        updated.used = kind == .debit ? (account.limit - newLimit) : newUsed
                         updated.closingDay = closingDay
                         updated.paymentDay = paymentDay
                         updated.bankID = bankID
@@ -245,7 +217,7 @@ struct EditAccountView: View {
                     }
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                               number(limit) == nil || number(used) == nil ||
-                              (number(limit) ?? -1) < 0 || (number(used) ?? -1) < 0)
+                              (number(limit) ?? -1) < 0 || (kind != .debit && (number(used) ?? -1) < 0))
                 }
             }
         }
@@ -266,15 +238,26 @@ struct AddAccountView: View {
     var body: some View {
         NavigationStack {
             Form {
-                BankSelector(selection: $bankID)
-                Picker("Red", selection: $network) { ForEach(CardNetworks.names, id: \.self) { Text($0).tag($0) } }
-                TextField("Nombre (ej. Nu)", text: $name)
-                Picker("Tipo", selection: $kind) { ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) } }
-                TextField(kind == .debit ? "Saldo de débito" : "Límite / monto original", text: $limit).keyboardType(.decimalPad)
-                TextField(kind == .debit ? "Ajuste del saldo (normalmente 0)" : "Monto utilizado / deuda", text: $used).keyboardType(.decimalPad)
-                Stepper("Día de corte: \(closingDay)", value: $closingDay, in: 1...31)
-                Stepper("Día de pago: \(paymentDay)", value: $paymentDay, in: 1...31)
-                Text("Para débito, escribe tu saldo actual y deja el ajuste en 0. El saldo mostrado es saldo menos ajuste. Los días 29–31 pueden no existir en todos los meses.").font(.caption).foregroundStyle(.secondary)
+                Section("Producto") {
+                    Picker("Tipo", selection: $kind) { ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) } }
+                    BankSelector(selection: $bankID)
+                    TextField("Nombre (ej. Nu)", text: $name)
+                    if kind != .loan { Picker("Red", selection: $network) { ForEach(CardNetworks.names, id: \.self) { Text($0).tag($0) } } }
+                }
+                Section(kind == .debit ? "Saldo inicial" : "Importes") {
+                    TextField(kind == .debit ? "Saldo disponible en débito" : (kind == .loan ? "Importe original del préstamo" : "Línea de crédito"), text: $limit).keyboardType(.decimalPad)
+                    if kind != .debit { TextField("Deuda actual registrada", text: $used).keyboardType(.decimalPad) }
+                    Text(kind == .debit ? "El dinero en débito es tuyo. No hay cortes ni pagos mínimos." : "Registra importes del estado de cuenta; la app no consulta datos bancarios.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if kind == .credit {
+                    Section("Ciclo de crédito") {
+                        Stepper("Día de corte: \(closingDay)", value: $closingDay, in: 1...31)
+                        Stepper("Día habitual de pago: \(paymentDay)", value: $paymentDay, in: 1...31)
+                    }
+                } else if kind == .loan {
+                    Section("Vencimiento") { Stepper("Día habitual: \(paymentDay)", value: $paymentDay, in: 1...31) }
+                }
             }
             .navigationTitle("Nueva cuenta")
             .toolbar {
@@ -283,7 +266,9 @@ struct AddAccountView: View {
                     Button("Guardar") {
                         store.addAccount(FinanceAccount(name: name.trimmingCharacters(in: .whitespacesAndNewlines), kind: kind, limit: max(0, Double(limit.replacingOccurrences(of: ",", with: ".")) ?? 0), used: max(0, Double(used.replacingOccurrences(of: ",", with: ".")) ?? 0), closingDay: closingDay, paymentDay: paymentDay, bankID: bankID, network: network))
                         dismiss()
-                    }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                               (Double(limit.replacingOccurrences(of: ",", with: ".")) ?? -1) < 0 ||
+                               (kind != .debit && (Double(used.replacingOccurrences(of: ",", with: ".")) ?? -1) < 0))
                 }
             }
         }
@@ -323,6 +308,15 @@ struct AddMovementView: View {
     @EnvironmentObject private var store: FinanceStore
     @Environment(\.dismiss) private var dismiss
     var existing: FinanceMovement? = nil
+    private var suggestedAccountID: UUID? = nil
+    private var suggestedType: MovementType? = nil
+    init(existing: FinanceMovement? = nil, initialAccountID: UUID? = nil, presetType: MovementType? = nil) {
+        self.existing = existing
+        self.suggestedAccountID = initialAccountID
+        self.suggestedType = presetType
+        _accountID = State(initialValue: existing?.accountID ?? initialAccountID)
+        _type = State(initialValue: existing?.type ?? presetType ?? .purchase)
+    }
     @State private var accountID: UUID?
     @State private var title = ""
     @State private var amount = ""
@@ -331,6 +325,8 @@ struct AddMovementView: View {
     @State private var usePostingDate = false
     @State private var type: MovementType = .purchase
     @State private var notes = ""
+    @State private var category = "Otros"
+    private let categories = ["Alimentos", "Transporte", "Servicios", "Compras", "Salud", "Hogar", "Entretenimiento", "Educación", "Otros"]
     @State private var manualPeriod = false
     @State private var overrideDate = Date()
     @State private var error = false
@@ -353,10 +349,15 @@ struct AddMovementView: View {
                     }
                     TextField("Concepto", text: $title)
                     TextField("Importe en MXN", text: $amount).keyboardType(.decimalPad)
+                    if type == .expense || type == .purchase {
+                        Picker("Categoría", selection: $category) {
+                            ForEach(categories, id: \.self) { Text($0).tag($0) }
+                        }
+                    }
                     DatePicker("Fecha de operación", selection: $date, displayedComponents: .date)
                     TextField("Notas (opcional)", text: $notes)
                 }
-                if let account, account.kind == .credit {
+                if let account, account.kind == .credit && (type == .purchase || type == .refund || type == .interest || type == .fee) {
                     Section("Periodo de facturación") {
                         Toggle("Fecha de contabilización diferente", isOn: $usePostingDate)
                         if usePostingDate { DatePicker("Contabilizada", selection: $postingDate, displayedComponents: .date) }
@@ -370,7 +371,7 @@ struct AddMovementView: View {
                     }
                 }
                 Section {
-                    Text("Los movimientos modifican el saldo registrado. Una devolución de crédito reduce la deuda; un ingreso de débito aumenta tu dinero. No registres dos veces compras MSI ya incluidas en el saldo.")
+                    Text(account?.kind == .debit ? "Depósito e ingreso aumentan tu dinero; gasto y transferencia externa enviada lo reducen. Para mover dinero entre tus propias cuentas usa la opción de transferencia vinculada." : (account?.kind == .credit ? "Compra aumenta deuda; pago y devolución la reducen. Si pagaste desde una cuenta de débito registrada, utiliza 'Registrar pago desde débito' en el detalle para reflejar ambos saldos." : "Los abonos reducen la deuda registrada, pero no cambian automáticamente el estado de tus cuotas del préstamo."))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -380,7 +381,7 @@ struct AddMovementView: View {
                 accountID = m.accountID; title = m.title; amount = String(m.amount); date = m.date
                 postingDate = m.postingDate ?? m.date; usePostingDate = m.postingDate != nil
                 type = m.type ?? (store.accounts.first(where: { $0.id == m.accountID })?.kind == .debit ? (m.isPayment ? .income : .expense) : (m.isPayment ? .cardPayment : .purchase))
-                notes = m.notes; manualPeriod = m.statementOverride != nil; overrideDate = m.statementOverride ?? m.date
+                notes = m.notes; category = m.category; manualPeriod = m.statementOverride != nil; overrideDate = m.statementOverride ?? m.date
             }
             .alert("No se pudo guardar", isPresented: $error) {
                 Button("Entendido", role: .cancel) { }
@@ -392,10 +393,11 @@ struct AddMovementView: View {
                         guard let accountID else { return }
                         let movement = FinanceMovement(id: existing?.id ?? UUID(), accountID: accountID, title: title, amount: amountValue, date: date,
                             isPayment: type.reducesDebt || type.addsCash, type: type,
-                            postingDate: usePostingDate ? postingDate : nil, statementOverride: manualPeriod ? overrideDate : nil, notes: notes)
+                            postingDate: usePostingDate ? postingDate : nil, statementOverride: manualPeriod ? overrideDate : nil, notes: notes, category: category)
                         let ok = existing == nil ? store.addMovement(movement) : store.updateMovement(movement)
                         if ok { dismiss() } else { error = true }
-                    }.disabled(accountID == nil || title.trimmingCharacters(in: .whitespaces).isEmpty || !amountValue.isFinite || amountValue <= 0)
+                    }.disabled(accountID == nil || title.trimmingCharacters(in: .whitespaces).isEmpty || !amountValue.isFinite || amountValue <= 0 ||
+                        (account.map { !MovementType.choices(for: $0.kind).contains(type) } ?? true))
                 }
             }
         }

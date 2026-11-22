@@ -48,9 +48,9 @@ enum MovementType: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     static func choices(for kind: AccountKind) -> [MovementType] {
         switch kind {
-        case .debit: return [.expense, .income, .refund, .adjustment]
-        case .credit: return [.purchase, .cardPayment, .refund, .interest, .fee, .adjustment]
-        case .loan: return [.loanDisbursement, .loanPayment, .interest, .fee, .adjustment]
+        case .debit: return [.expense, .income, .transferOut, .transferIn, .refund]
+        case .credit: return [.purchase, .cardPayment, .refund, .interest, .fee]
+        case .loan: return [.loanDisbursement, .loanPayment, .interest, .fee]
         }
     }
     var reducesDebt: Bool { self == .cardPayment || self == .loanPayment || self == .refund }
@@ -69,11 +69,13 @@ struct FinanceMovement: Identifiable, Codable {
     var statementOverride: Date? = nil
     var notes: String = ""
     var transferGroupID: UUID? = nil
-    enum CodingKeys: String, CodingKey { case id, accountID, title, amount, date, isPayment, type, postingDate, statementOverride, notes, transferGroupID }
-    init(id: UUID = UUID(), accountID: UUID, title: String, amount: Double, date: Date = .now, isPayment: Bool = false, type: MovementType? = nil, postingDate: Date? = nil, statementOverride: Date? = nil, notes: String = "", transferGroupID: UUID? = nil) {
+    var linkedStatementID: UUID? = nil
+    var category: String = "Otros"
+    enum CodingKeys: String, CodingKey { case id, accountID, title, amount, date, isPayment, type, postingDate, statementOverride, notes, transferGroupID, linkedStatementID, category }
+    init(id: UUID = UUID(), accountID: UUID, title: String, amount: Double, date: Date = .now, isPayment: Bool = false, type: MovementType? = nil, postingDate: Date? = nil, statementOverride: Date? = nil, notes: String = "", transferGroupID: UUID? = nil, linkedStatementID: UUID? = nil, category: String = "Otros") {
         self.id = id; self.accountID = accountID; self.title = title; self.amount = amount; self.date = date
         self.isPayment = isPayment; self.type = type; self.postingDate = postingDate; self.statementOverride = statementOverride
-        self.notes = notes; self.transferGroupID = transferGroupID
+        self.notes = notes; self.transferGroupID = transferGroupID; self.linkedStatementID = linkedStatementID; self.category = category
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -88,6 +90,8 @@ struct FinanceMovement: Identifiable, Codable {
         statementOverride = try c.decodeIfPresent(Date.self, forKey: .statementOverride)
         notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         transferGroupID = try c.decodeIfPresent(UUID.self, forKey: .transferGroupID)
+        linkedStatementID = try c.decodeIfPresent(UUID.self, forKey: .linkedStatementID)
+        category = try c.decodeIfPresent(String.self, forKey: .category) ?? "Otros"
     }
 }
 
@@ -117,12 +121,47 @@ struct PaymentScheduleOverride: Identifiable, Codable {
     var paidDate: Date? = nil
 }
 
+struct BillingStatement: Identifiable, Codable {
+    var id: UUID = UUID()
+    var accountID: UUID
+    var closingDate: Date
+    var dueDate: Date
+    var amountToAvoidInterest: Double
+    var statementBalance: Double = 0
+    var minimumPayment: Double
+    var paidAmount: Double
+    var notes: String = ""
+    var pending: Double { max(0, amountToAvoidInterest - paidAmount) }
+    enum CodingKeys: String, CodingKey {
+        case id, accountID, closingDate, dueDate, amountToAvoidInterest, statementBalance, minimumPayment, paidAmount, notes
+    }
+    init(id: UUID = UUID(), accountID: UUID, closingDate: Date, dueDate: Date, amountToAvoidInterest: Double,
+         statementBalance: Double = 0, minimumPayment: Double, paidAmount: Double, notes: String = "") {
+        self.id = id; self.accountID = accountID; self.closingDate = closingDate; self.dueDate = dueDate
+        self.amountToAvoidInterest = amountToAvoidInterest; self.statementBalance = statementBalance
+        self.minimumPayment = minimumPayment; self.paidAmount = paidAmount; self.notes = notes
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        accountID = try c.decode(UUID.self, forKey: .accountID)
+        closingDate = try c.decode(Date.self, forKey: .closingDate)
+        dueDate = try c.decode(Date.self, forKey: .dueDate)
+        amountToAvoidInterest = try c.decode(Double.self, forKey: .amountToAvoidInterest)
+        statementBalance = try c.decodeIfPresent(Double.self, forKey: .statementBalance) ?? amountToAvoidInterest
+        minimumPayment = try c.decode(Double.self, forKey: .minimumPayment)
+        paidAmount = try c.decode(Double.self, forKey: .paidAmount)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+    }
+}
+
 struct FinanceData: Codable {
     var accounts: [FinanceAccount] = []
     var movements: [FinanceMovement] = []
     var plans: [InstallmentPlan] = []
     var scheduleOverrides: [PaymentScheduleOverride] = []
-    enum CodingKeys: String, CodingKey { case accounts, movements, plans, scheduleOverrides }
+    var statements: [BillingStatement] = []
+    enum CodingKeys: String, CodingKey { case accounts, movements, plans, scheduleOverrides, statements }
     init(accounts: [FinanceAccount] = [], movements: [FinanceMovement] = [], plans: [InstallmentPlan] = []) {
         self.accounts = accounts; self.movements = movements; self.plans = plans
     }
@@ -132,5 +171,6 @@ struct FinanceData: Codable {
         movements = try c.decodeIfPresent([FinanceMovement].self, forKey: .movements) ?? []
         plans = try c.decodeIfPresent([InstallmentPlan].self, forKey: .plans) ?? []
         scheduleOverrides = try c.decodeIfPresent([PaymentScheduleOverride].self, forKey: .scheduleOverrides) ?? []
+        statements = try c.decodeIfPresent([BillingStatement].self, forKey: .statements) ?? []
     }
 }

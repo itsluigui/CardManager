@@ -85,7 +85,8 @@ struct AccountPlansSection: View {
             }
             ForEach(accountPlans) { plan in
                 VStack(alignment: .leading, spacing: 9) {
-                    PlanRow(plan: plan)
+                    Button { timelineID = plan.id } label: { PlanRow(plan: plan) }
+                        .buttonStyle(.plain)
                     HStack(spacing: 18) {
                         Button { activeSheet = .edit(plan.id) } label: {
                             Label("Editar", systemImage: "pencil")
