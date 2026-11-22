@@ -22,8 +22,14 @@ private enum PlanSheet: Identifiable {
 }
 
 struct PlanRow: View {
+    @EnvironmentObject private var store: FinanceStore
     let plan: InstallmentPlan
     var body: some View {
+        let entries = store.schedule(for: plan)
+        let paidTotal = entries.reduce(0) { $0 + $1.paidAmount }
+        let scheduledTotal = entries.reduce(0) { $0 + $1.amount }
+        let finishedCount = entries.filter { $0.paidAmount >= $0.amount - 0.005 }.count
+        let nextDue = entries.first(where: { $0.paidAmount < $0.amount - 0.005 })?.dueDate
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -36,18 +42,18 @@ struct PlanRow: View {
             }
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("\(plan.paidMonths) de \(plan.totalMonths) mensualidades")
-                    Text("Pagado estimado: \(mxn(Double(plan.paidMonths) * plan.monthlyAmount))")
+                    Text("\(finishedCount) de \(entries.count) mensualidades")
+                    Text("Pagado registrado: \(mxn(paidTotal))")
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text("Restan \(plan.remainingMonths) meses")
-                    Text("Pendiente estimado: \(mxn(plan.remainingBalance))")
+                    Text("Restan \(entries.count - finishedCount) cuotas")
+                    Text("Por pagar: \(mxn(max(0, scheduledTotal - paidTotal)))")
                 }
             }.font(.caption2).foregroundStyle(.secondary)
-            ProgressView(value: Double(plan.paidMonths), total: Double(max(plan.totalMonths, 1))).tint(.cmGreen)
-            if plan.isFinished { Text("Liquidado").font(.caption.bold()).foregroundStyle(Color.cmGreen) }
-            else { PaymentCountdown(date: plan.nextPaymentDate) }
+            ProgressView(value: paidTotal, total: max(1, scheduledTotal)).tint(.cmGreen)
+            if finishedCount == entries.count { Text("Liquidado").font(.caption.bold()).foregroundStyle(Color.cmGreen) }
+            else if let due = nextDue { PaymentCountdown(date: due) }
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
     }
@@ -81,11 +87,9 @@ struct AccountPlansSection: View {
                         Button { activeSheet = .edit(plan.id) } label: {
                             Label("Editar", systemImage: "pencil")
                         }.buttonStyle(.plain)
-                        if !plan.isFinished {
-                            Button { paymentPlanID = plan.id } label: {
-                                Label("Registrar pago", systemImage: "checkmark.circle")
-                            }.buttonStyle(.plain)
-                        }
+                        NavigationLink(destination: InstallmentScheduleView(planID: plan.id)) {
+                            Label("Ver cuotas", systemImage: "calendar")
+                        }.buttonStyle(.plain)
                         Spacer(minLength: 0)
                         Button(role: .destructive) { deletionID = plan.id } label: {
                             Image(systemName: "trash")

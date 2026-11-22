@@ -66,11 +66,22 @@ struct InstallmentPlan: Identifiable, Codable {
     var isFinished: Bool { remainingMonths == 0 }
 }
 
+struct PaymentScheduleOverride: Identifiable, Codable {
+    var id: UUID = UUID()
+    var planID: UUID
+    var installment: Int
+    var dueDate: Date
+    var amount: Double
+    var paidAmount: Double = 0
+    var paidDate: Date? = nil
+}
+
 struct FinanceData: Codable {
     var accounts: [FinanceAccount] = []
     var movements: [FinanceMovement] = []
     var plans: [InstallmentPlan] = []
-    enum CodingKeys: String, CodingKey { case accounts, movements, plans }
+    var scheduleOverrides: [PaymentScheduleOverride] = []
+    enum CodingKeys: String, CodingKey { case accounts, movements, plans, scheduleOverrides }
     init(accounts: [FinanceAccount] = [], movements: [FinanceMovement] = [], plans: [InstallmentPlan] = []) {
         self.accounts = accounts; self.movements = movements; self.plans = plans
     }
@@ -79,5 +90,6 @@ struct FinanceData: Codable {
         accounts = try c.decodeIfPresent([FinanceAccount].self, forKey: .accounts) ?? []
         movements = try c.decodeIfPresent([FinanceMovement].self, forKey: .movements) ?? []
         plans = try c.decodeIfPresent([InstallmentPlan].self, forKey: .plans) ?? []
+        scheduleOverrides = try c.decodeIfPresent([PaymentScheduleOverride].self, forKey: .scheduleOverrides) ?? []
     }
 }

@@ -19,9 +19,73 @@ import Combine
     func updatePlan(_ plan: InstallmentPlan) {
         guard let i = data.plans.firstIndex(where: { $0.id == plan.id }) else { return }
         data.plans[i] = plan
+        // Existing per-installment overrides remain tied to their installment number.
+        data.scheduleOverrides.removeAll { $0.planID == plan.id && $0.installment > plan.totalMonths }
         save()
     }
-    func deletePlan(_ id: UUID) { data.plans.removeAll { $0.id == id }; save() }
+    func deletePlan(_ id: UUID) {
+        data.plans.removeAll { $0.id == id }
+        data.scheduleOverrides.removeAll { $0.planID == id }
+        save()
+    }
+    var debitBalance: Double { data.accounts.filter { $0.kind == .debit }.reduce(0) { $0 + $1.available } }
+    var totalLoanDebt: Double { data.accounts.filter { $0.kind == .loan }.reduce(0) { $0 + $1.used } }
+    var totalLoanOriginal: Double { data.accounts.filter { $0.kind == .loan }.reduce(0) { $0 + $1.limit } }
+    var totalLoanRepaid: Double { max(0, totalLoanOriginal - totalLoanDebt) }
+    var availableCredit: Double { max(0, totalLimit - totalUsedCredit) }
+    var netBalance: Double { debitBalance - totalDebt }
+    var debitAccounts: [FinanceAccount] { accounts.filter { $0.kind == .debit } }
+    var creditAccounts: [FinanceAccount] { accounts.filter { $0.kind == .credit } }
+    var loanAccounts: [FinanceAccount] { accounts.filter { $0.kind == .loan } }
+    var creditUtilization: Double { totalLimit > 0 ? totalUsedCredit / totalLimit : 0 }
+    var amountToTarget: Double { max(0, totalUsedCredit - totalLimit * 0.30) }
+    var monthlyCommitments: Double {
+        plans.reduce(0) { sum, plan in
+            let unpaid = schedule(for: plan).filter { $0.paidAmount < $0.amount - 0.005 }
+            return sum + (unpaid.first.map { max(0, $0.amount - $0.paidAmount) } ?? 0)
+        }
+    }
+    func schedule(for plan: InstallmentPlan) -> [PaymentScheduleOverride] {
+        let calendar = Calendar.current
+        let anchor = calendar.date(byAdding: .month, value: -plan.paidMonths, to: plan.nextPaymentDate) ?? plan.nextPaymentDate
+        return (1...max(1, plan.totalMonths)).map { n in
+            if let saved = data.scheduleOverrides.first(where: { $0.planID == plan.id && $0.installment == n }) { return saved }
+            let due = calendar.date(byAdding: .month, value: n - 1, to: anchor) ?? anchor
+            return PaymentScheduleOverride(planID: plan.id, installment: n, dueDate: due,
+                amount: plan.monthlyAmount, paidAmount: n <= plan.paidMonths ? plan.monthlyAmount : 0)
+        }
+    }
+    func saveInstallment(_ entry: PaymentScheduleOverride) {
+        guard data.plans.contains(where: { $0.id == entry.planID }), entry.amount > 0,
+              entry.paidAmount >= 0, entry.paidAmount <= entry.amount else { return }
+        if let i = data.scheduleOverrides.firstIndex(where: { $0.planID == entry.planID && $0.installment == entry.installment }) {
+            data.scheduleOverrides[i] = entry
+        } else { data.scheduleOverrides.append(entry) }
+        save()
+    }
+    func recordInstallmentPayment(planID: UUID, installment: Int, amount: Double, date: Date) {
+        guard let plan = data.plans.first(where: { $0.id == planID }),
+              let current = schedule(for: plan).first(where: { $0.installment == installment }),
+              amount > 0, current.paidAmount + amount <= current.amount + 0.001 else { return }
+        var changed = current
+        changed.paidAmount = min(changed.amount, current.paidAmount + amount)
+        changed.paidDate = date
+        saveInstallment(changed)
+    }
+    func transfer(from sourceID: UUID, to targetID: UUID, amount: Double, date: Date) {
+        guard sourceID != targetID, amount > 0,
+              let source = data.accounts.firstIndex(where: { $0.id == sourceID }),
+              let target = data.accounts.firstIndex(where: { $0.id == targetID }),
+              data.accounts[source].kind == .debit, data.accounts[target].kind == .debit,
+              data.accounts[source].available >= amount else { return }
+        // Debit balance = limit - used. A transfer changes used, not limit.
+        data.accounts[source].used += amount
+        data.accounts[target].used -= amount
+        let ref = UUID().uuidString.prefix(6)
+        data.movements.append(FinanceMovement(accountID: sourceID, title: "Transferencia enviada #\(ref)", amount: amount, date: date, isPayment: false))
+        data.movements.append(FinanceMovement(accountID: targetID, title: "Transferencia recibida #\(ref)", amount: amount, date: date, isPayment: true))
+        save()
+    }
     func markInstallmentPaid(_ id: UUID) {
         guard let index = data.plans.firstIndex(where: { $0.id == id }), !data.plans[index].isFinished else { return }
         data.plans[index].paidMonths += 1
@@ -52,6 +116,8 @@ import Combine
         let ids = Set(decoded.accounts.map(\.id))
         guard ids.count == decoded.accounts.count else { throw BackupError.duplicateAccounts }
         guard decoded.movements.allSatisfy({ ids.contains($0.accountID) }) && decoded.plans.allSatisfy({ ids.contains($0.accountID) }) else { throw BackupError.missingAccounts }
+        let planIDs = Set(decoded.plans.map(\.id))
+        guard decoded.scheduleOverrides.allSatisfy({ planIDs.contains($0.planID) && $0.amount > 0 && $0.paidAmount >= 0 && $0.paidAmount <= $0.amount }) else { throw BackupError.invalidData }
         // Validate before replacing, then atomically persist the complete new dataset.
         let encoded = try JSONEncoder().encode(decoded)
         try encoded.write(to: fileURL, options: .atomic)
@@ -72,14 +138,20 @@ import Combine
     func deleteAccount(_ id: UUID) {
         data.accounts.removeAll { $0.id == id }
         data.movements.removeAll { $0.accountID == id }
+        let planIDs = Set(data.plans.filter { $0.accountID == id }.map(\.id))
+        data.scheduleOverrides.removeAll { planIDs.contains($0.planID) }
         data.plans.removeAll { $0.accountID == id }
         save()
     }
     func addMovement(_ movement: FinanceMovement) {
-        guard let i = data.accounts.firstIndex(where: { $0.id == movement.accountID }) else { return }
+        guard movement.amount.isFinite, movement.amount > 0,
+              let i = data.accounts.firstIndex(where: { $0.id == movement.accountID }) else { return }
         let signed = movement.isPayment ? -movement.amount : movement.amount
         if data.accounts[i].kind == .debit {
-            data.accounts[i].used = max(0, data.accounts[i].used + signed)
+            // Debit uses limit as opening balance and used as signed net spending.
+            // Negative used represents deposits exceeding the opening balance.
+            guard movement.isPayment || data.accounts[i].available >= movement.amount else { return }
+            data.accounts[i].used += signed
         } else {
             data.accounts[i].used = max(0, data.accounts[i].used + signed)
         }
@@ -87,12 +159,26 @@ import Combine
         save()
     }
     func deleteMovement(_ id: UUID) {
-        guard let m = data.movements.first(where: { $0.id == id }) else { return }
-        if let i = data.accounts.firstIndex(where: { $0.id == m.accountID }) {
-            let signed = m.isPayment ? -m.amount : m.amount
-            data.accounts[i].used = max(0, data.accounts[i].used - signed)
+        guard let movement = data.movements.first(where: { $0.id == id }) else { return }
+        // A transfer is a linked pair. Undo both legs atomically so the
+        // combined debit balance remains unchanged.
+        let items: [FinanceMovement]
+        if let marker = movement.title.split(separator: "#").last,
+           (movement.title.hasPrefix("Transferencia enviada #") || movement.title.hasPrefix("Transferencia recibida #")) {
+            let key = String(marker)
+            items = data.movements.filter {
+                ($0.title.hasPrefix("Transferencia enviada #") || $0.title.hasPrefix("Transferencia recibida #")) && $0.title.hasSuffix("#" + key)
+            }
+        } else { items = [movement] }
+        for m in items {
+            if let i = data.accounts.firstIndex(where: { $0.id == m.accountID }) {
+                let signed = m.isPayment ? -m.amount : m.amount
+                if data.accounts[i].kind == .debit { data.accounts[i].used -= signed }
+                else { data.accounts[i].used = max(0, data.accounts[i].used - signed) }
+            }
         }
-        data.movements.removeAll { $0.id == id }
+        let ids = Set(items.map(\.id))
+        data.movements.removeAll { ids.contains($0.id) }
         save()
     }
     private func load() {

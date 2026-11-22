@@ -212,8 +212,8 @@ struct EditAccountView: View {
                 Picker("Tipo", selection: $kind) {
                     ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) }
                 }
-                TextField("Límite o saldo inicial", text: $limit).keyboardType(.decimalPad)
-                TextField("Monto utilizado / deuda", text: $used).keyboardType(.decimalPad)
+                TextField(kind == .debit ? "Saldo de débito" : "Límite / monto original", text: $limit).keyboardType(.decimalPad)
+                TextField(kind == .debit ? "Ajuste del saldo (normalmente 0)" : "Monto utilizado / deuda", text: $used).keyboardType(.decimalPad)
                 Stepper("Día de corte: \(closingDay)", value: $closingDay, in: 1...31)
                 Stepper("Día de pago: \(paymentDay)", value: $paymentDay, in: 1...31)
                 Text("Corregir el monto utilizado no altera el historial de movimientos.")
@@ -266,11 +266,11 @@ struct AddAccountView: View {
                 Picker("Red", selection: $network) { ForEach(CardNetworks.names, id: \.self) { Text($0).tag($0) } }
                 TextField("Nombre (ej. Nu)", text: $name)
                 Picker("Tipo", selection: $kind) { ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) } }
-                TextField("Límite o saldo inicial", text: $limit).keyboardType(.decimalPad)
-                TextField("Monto utilizado / deuda", text: $used).keyboardType(.decimalPad)
+                TextField(kind == .debit ? "Saldo de débito" : "Límite / monto original", text: $limit).keyboardType(.decimalPad)
+                TextField(kind == .debit ? "Ajuste del saldo (normalmente 0)" : "Monto utilizado / deuda", text: $used).keyboardType(.decimalPad)
                 Stepper("Día de corte: \(closingDay)", value: $closingDay, in: 1...31)
                 Stepper("Día de pago: \(paymentDay)", value: $paymentDay, in: 1...31)
-                Text("Para débito, registra el saldo en el campo de límite. Los días 29–31 pueden no existir en todos los meses.").font(.caption).foregroundStyle(.secondary)
+                Text("Para débito, escribe tu saldo actual y deja el ajuste en 0. El saldo mostrado es saldo menos ajuste. Los días 29–31 pueden no existir en todos los meses.").font(.caption).foregroundStyle(.secondary)
             }
             .navigationTitle("Nueva cuenta")
             .toolbar {
@@ -333,8 +333,8 @@ struct AddMovementView: View {
                 TextField("Concepto", text: $title)
                 TextField("Monto", text: $amount).keyboardType(.decimalPad)
                 DatePicker("Fecha", selection: $date, displayedComponents: .date)
-                Toggle("Es abono / pago", isOn: $isPayment)
-                Text("Los abonos disminuyen el saldo utilizado; los cargos lo aumentan.").font(.caption).foregroundStyle(.secondary)
+                Toggle("Pago / ingreso (aumenta saldo en débito)", isOn: $isPayment)
+                Text("En crédito y préstamos: pago reduce deuda, cargo la aumenta. En débito: ingreso aumenta tu saldo y gasto lo reduce. No registres una transferencia entre cuentas propias como ingreso nuevo.").font(.caption).foregroundStyle(.secondary)
             }
             .navigationTitle("Nuevo movimiento")
             .toolbar {

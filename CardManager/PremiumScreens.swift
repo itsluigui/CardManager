@@ -166,17 +166,25 @@ struct PremiumHome: View {
                             metric("Crédito disponible", peso(available), "arrow.down.left", .cmGreen)
                         }.padding(13)
                     }.frame(height: 108)
+                    HStack(spacing: 10) {
+                        NavigationLink(destination: DebitAccountsView()) {
+                            homeTile("Mi dinero · débito", peso(store.debitBalance), "banknote.fill", .cmGreen)
+                        }.buttonStyle(.plain)
+                        NavigationLink(destination: LoanOverviewView()) {
+                            homeTile("Préstamos pendientes", peso(store.totalLoanDebt), "building.columns.fill", .white)
+                        }.buttonStyle(.plain)
+                    }
                     CMPanel {
                         VStack(alignment: .leading, spacing: 11) {
                             HStack {
                                 Text("Uso de crédito general").font(.subheadline.bold())
                                 Spacer()
-                                Text(pct(ratio)).font(.headline.bold()).foregroundStyle(Color.cmGreen)
+                                Text(pct(ratio)).font(.headline.bold()).foregroundStyle(creditTone(ratio))
                             }
                             GeometryReader { g in
                                 ZStack(alignment: .leading) {
                                     Capsule().fill(.white.opacity(0.11))
-                                    Capsule().fill(ratio > 0.5 ? Color.orange : Color.cmGreen)
+                                    Capsule().fill(creditTone(ratio))
                                         .frame(width: g.size.width * min(1, max(0, ratio)))
                                 }
                             }.frame(height: 9)
@@ -187,6 +195,15 @@ struct PremiumHome: View {
                             }.font(.caption2)
                         }
                     }
+                    NavigationLink(destination: CreditHealthView()) {
+                        HStack {
+                            Label("Diagnóstico de utilización", systemImage: "heart.text.square.fill")
+                            Spacer()
+                            Text("Ver detalle").font(.caption)
+                            Image(systemName: "chevron.right")
+                        }.font(.subheadline.bold()).foregroundStyle(Color.cmGreen)
+                            .padding(14).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 15))
+                    }.buttonStyle(.plain)
                     HStack {
                         Label("Próximos pagos", systemImage: "calendar").font(.headline)
                         Spacer()
@@ -227,12 +244,32 @@ struct PremiumHome: View {
                         Spacer()
                         Text("\(store.accounts.count) registradas").font(.caption).foregroundStyle(.secondary)
                     }
-                    if let first = store.accounts.first {
-                        NavigationLink(destination: AccountDetailView(accountID: first.id)) {
-                            CMCardFace(account: first, compact: true)
-                        }.buttonStyle(.plain)
+                    let cards = store.accounts.filter { $0.kind != .loan }
+                    if !cards.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(cards) { account in
+                                    NavigationLink(destination: AccountDetailView(accountID: account.id)) {
+                                        CMCardFace(account: account, compact: true).frame(width: 265)
+                                    }.buttonStyle(.plain)
+                                }
+                            }.padding(.vertical, 12).padding(.horizontal, 2)
+                        }
                     } else {
                         CMPanel { Text("Agrega tu primera tarjeta desde la sección Tarjetas.").foregroundStyle(.secondary) }
+                    }
+                    CMPanel {
+                        VStack(alignment: .leading, spacing: 11) {
+                            Label("Tu balance", systemImage: "chart.pie.fill").font(.headline)
+                            HStack { Text("Crédito utilizado"); Spacer(); Text(peso(store.totalUsedCredit)) }.font(.subheadline)
+                            HStack { Text("Deuda de préstamos"); Spacer(); Text(peso(store.totalLoanDebt)) }.font(.subheadline)
+                            HStack { Text("Dinero propio"); Spacer(); Text(peso(store.debitBalance)).foregroundStyle(Color.cmGreen) }.font(.subheadline)
+                            HStack { Text("Cuotas registradas próximas"); Spacer(); Text(peso(store.monthlyCommitments)) }.font(.subheadline)
+                            Divider()
+                            HStack { Text("Balance neto estimado"); Spacer(); Text(peso(store.netBalance)).fontWeight(.bold) }.font(.subheadline)
+                            Text("El crédito disponible no es dinero propio. Las compras MSI ya incluidas en la deuda de tarjeta no se suman dos veces.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                     HStack {
                         CMTitle(text: "Actividad reciente")
@@ -251,6 +288,15 @@ struct PremiumHome: View {
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showCalendar) { PremiumCalendar() }
         }
+    }
+    private func homeTile(_ title: String, _ value: String, _ symbol: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(title, systemImage: symbol).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(color)
+                .lineLimit(1).minimumScaleFactor(0.55)
+            Image(systemName: "arrow.up.right").font(.caption).foregroundStyle(Color.cmGreen)
+        }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 18))
     }
     private func metric(_ title: String, _ value: String, _ symbol: String, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -314,15 +360,21 @@ struct PremiumAccounts: View {
                                 CMBrandBadge(account: account, size: 46)
                                 VStack(alignment: .leading, spacing: 7) {
                                     HStack { Text(account.name).font(.subheadline.bold()); Spacer(); Text(account.kind.rawValue).font(.caption2).foregroundStyle(.secondary) }
-                                    Text("Usado: " + peso(account.used)).font(.caption).foregroundStyle(.white.opacity(0.72))
-                                    Text("Disponible: " + peso(account.available)).font(.caption2).foregroundStyle(.white.opacity(0.58))
-                                    GeometryReader { g in
-                                        ZStack(alignment: .leading) {
-                                            Capsule().fill(.white.opacity(0.12))
-                                            Capsule().fill(account.utilization > 0.5 ? Color.orange : Color.cmGreen)
-                                                .frame(width: g.size.width * min(1, account.utilization))
-                                        }
-                                    }.frame(height: 5)
+                                    Text(account.kind == .debit ? "Saldo propio: " + peso(account.available) : "Adeudado: " + peso(account.used)).font(.caption).foregroundStyle(.white.opacity(0.72))
+                                    if account.kind == .credit {
+                                        Text("Disponible: " + peso(account.available)).font(.caption2).foregroundStyle(.white.opacity(0.58))
+                                        GeometryReader { g in
+                                            ZStack(alignment: .leading) {
+                                                Capsule().fill(.white.opacity(0.12))
+                                                Capsule().fill(creditTone(account.utilization))
+                                                    .frame(width: g.size.width * min(1, max(0, account.utilization)))
+                                            }
+                                        }.frame(height: 5)
+                                        Text(creditStatus(account.utilization) + " · " + pct(account.utilization))
+                                            .font(.caption2).foregroundStyle(creditTone(account.utilization))
+                                    } else if account.kind == .loan {
+                                        Text("Préstamo · saldo pendiente registrado").font(.caption2).foregroundStyle(.secondary)
+                                    }
                                 }
                                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                             }.padding(14).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 17))
@@ -501,15 +553,32 @@ struct PremiumAnalytics: View {
                     }
                     CMPanel {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("Deuda por tarjeta").font(.headline)
-                            if store.accounts.filter({ $0.kind != .debit }).isEmpty {
-                                Text("Aún no hay datos para mostrar.").font(.caption).foregroundStyle(.secondary)
+                            Text("Deuda por tarjeta de crédito").font(.headline)
+                            let credits = store.creditAccounts.sorted { $0.used > $1.used }
+                            if credits.isEmpty {
+                                Text("Aún no hay tarjetas de crédito.").font(.caption).foregroundStyle(.secondary)
                             } else {
-                                Chart(store.accounts.filter { $0.kind != .debit }) { a in
-                                    BarMark(x: .value("Tarjeta", a.name), y: .value("Deuda", a.used))
-                                        .foregroundStyle(Color.cmGreen.gradient)
-                                        .cornerRadius(4)
-                                }.chartXAxis { AxisMarks(values: .automatic) { AxisValueLabel() } }.frame(height: 185)
+                                ForEach(credits) { a in
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        HStack {
+                                            Text(a.name).font(.subheadline.bold()).lineLimit(2)
+                                            Spacer()
+                                            Text(peso(a.used)).font(.caption.bold()).monospacedDigit()
+                                        }
+                                        GeometryReader { g in
+                                            Capsule().fill(.white.opacity(0.10))
+                                                .overlay(alignment: .leading) {
+                                                    Capsule().fill(creditTone(a.utilization))
+                                                        .frame(width: g.size.width * min(1, max(0, a.utilization)))
+                                                }
+                                        }.frame(height: 9)
+                                        HStack {
+                                            Text(pct(a.utilization) + " del límite utilizado")
+                                            Spacer()
+                                            Text(creditStatus(a.utilization))
+                                        }.font(.caption2).foregroundStyle(.secondary)
+                                    }.padding(.vertical, 4)
+                                }
                             }
                         }
                     }
@@ -523,7 +592,7 @@ struct PremiumAnalytics: View {
                                     GeometryReader { g in
                                         ZStack(alignment: .leading) {
                                             Capsule().fill(.white.opacity(0.10))
-                                            Capsule().fill(a.utilization > 0.5 ? Color.orange : Color.cmGreen)
+                                            Capsule().fill(creditTone(a.utilization))
                                                 .frame(width: g.size.width * min(1, a.utilization))
                                         }
                                     }.frame(height: 6)
@@ -532,7 +601,19 @@ struct PremiumAnalytics: View {
                             }
                         }
                     }
-                    Text("El análisis usa únicamente los saldos que registras. No representa tu puntuación de Buró de Crédito.")
+                    NavigationLink(destination: CreditHealthView()) {
+                        Label("Ver evaluación orientativa de utilización", systemImage: "heart.text.square")
+                            .font(.subheadline.bold()).foregroundStyle(Color.cmGreen)
+                    }
+                    CMPanel {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Crédito y préstamos: análisis separado").font(.headline)
+                            HStack { Text("Deuda de tarjetas"); Spacer(); Text(peso(store.totalUsedCredit)) }
+                            HStack { Text("Deuda de préstamos"); Spacer(); Text(peso(store.totalLoanDebt)) }
+                            HStack { Text("Dinero en débito"); Spacer(); Text(peso(store.debitBalance)).foregroundStyle(Color.cmGreen) }
+                        }.font(.subheadline)
+                    }
+                    Text("Los indicadores son orientativos y usan tus datos manuales. No son una calificación oficial ni garantizan cambios en Buró de Crédito.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(18)
             }.background(Color.cmBackground.ignoresSafeArea()).toolbar(.hidden, for: .navigationBar)
@@ -627,7 +708,10 @@ struct PremiumMore: View {
                 VStack(alignment: .leading, spacing: 18) {
                     CMTitle(text: "Más")
                     Text("CARD MANAGER  /  PRO").font(.caption2.bold()).tracking(2).foregroundStyle(Color.cmGreen)
-                    NavigationLink(destination: PremiumWallet()) { moreRow("Wallet", "square.stack.fill", "Tarjetas apiladas") }
+                    NavigationLink(destination: PremiumWallet()) { moreRow("Wallet", "square.stack.fill", "Tarjetas seleccionables") }
+                    NavigationLink(destination: DebitAccountsView()) { moreRow("Mi dinero y débito", "banknote.fill", "Saldos y transferencias propias") }
+                    NavigationLink(destination: LoanOverviewView()) { moreRow("Mis préstamos", "building.columns.fill", "Deuda y calendarios de cuotas") }
+                    NavigationLink(destination: CreditHealthView()) { moreRow("Salud crediticia", "heart.text.square.fill", "Utilización y recomendaciones") }
                     Button { calendar = true } label: { moreRow("Calendario", "calendar", "Fechas de corte y pago") }
                     Button {
                         do {
@@ -645,7 +729,7 @@ struct PremiumMore: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    Text("Card Manager Pro · 1.6.0 · Vista previa de lanzamiento").font(.caption2).foregroundStyle(.secondary)
+                    Text("Card Manager Pro · 1.7.0 · Versión de prueba").font(.caption2).foregroundStyle(.secondary)
                 }.padding(18)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)
