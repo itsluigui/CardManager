@@ -19,7 +19,9 @@ jobs:
           echo "SWIFT FILES:"
           find CardManager -name "*.swift" -print
           echo "WALLET CHECK:"
-          grep -nF "WalletView().tabItem" CardManager/Views.swift
+          grep -nF "PremiumHome().tabItem" CardManager/Views.swift
+          test -f CardManager/PremiumScreens.swift
+          grep -q "struct PremiumWallet: View" CardManager/PremiumScreens.swift
           test -f CardManager/ProFeatures.swift
           grep -q "struct WalletView: View" CardManager/ProFeatures.swift
           echo "SOURCE HASH:"
