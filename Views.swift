@@ -10,6 +10,7 @@ struct RootView: View {
         TabView {
             DashboardView().tabItem { Label("Inicio", systemImage: "house.fill") }
             AccountsView().tabItem { Label("Tarjetas", systemImage: "creditcard.fill") }
+            WalletView().tabItem { Label("Wallet", systemImage: "square.stack.fill") }
             MovementsView().tabItem { Label("Movimientos", systemImage: "arrow.left.arrow.right") }
             InsightsView().tabItem { Label("Análisis", systemImage: "chart.bar.fill") }
         }
@@ -35,6 +36,7 @@ struct DashboardView: View {
                         Text(ratio <= 0.3 ? "Dentro de tu objetivo de 30%" : "Referencia: procura mantener el uso bajo 30% cuando sea posible")
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    MarketBackdrop().frame(height: 72).clipped().cornerRadius(14)
                     Text("Próximos días de pago").font(.headline)
                     ForEach(store.accounts.filter { $0.kind != .debit }) { a in
                         HStack { Text(a.name); Spacer(); Text("Día \(a.paymentDay)").foregroundStyle(.secondary) }
@@ -106,6 +108,8 @@ struct AccountDetailView: View {
             if let account = store.accounts.first(where: { $0.id == accountID }) {
                 List {
                     LabeledContent("Tipo", value: account.kind.rawValue)
+                    LabeledContent("Banco", value: BankCatalog.name(for: account.bankID))
+                    LabeledContent("Red", value: account.network)
                     LabeledContent("Límite / saldo inicial", value: money(account.limit))
                     LabeledContent("Usado", value: money(account.used))
                     LabeledContent("Disponible", value: money(account.available))
@@ -135,6 +139,8 @@ struct EditAccountView: View {
     @State private var used: String
     @State private var closingDay: Int
     @State private var paymentDay: Int
+    @State private var bankID: String
+    @State private var network: String
 
     init(account: FinanceAccount) {
         self.account = account
@@ -144,6 +150,8 @@ struct EditAccountView: View {
         _used = State(initialValue: String(account.used))
         _closingDay = State(initialValue: account.closingDay)
         _paymentDay = State(initialValue: account.paymentDay)
+        _bankID = State(initialValue: account.bankID)
+        _network = State(initialValue: account.network)
     }
 
     private func number(_ value: String) -> Double? {
@@ -153,6 +161,8 @@ struct EditAccountView: View {
     var body: some View {
         NavigationStack {
             Form {
+                BankSelector(selection: $bankID)
+                Picker("Red", selection: $network) { ForEach(CardNetworks.names, id: \.self) { Text($0).tag($0) } }
                 TextField("Nombre", text: $name)
                 Picker("Tipo", selection: $kind) {
                     ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) }
@@ -179,6 +189,8 @@ struct EditAccountView: View {
                         updated.used = newUsed
                         updated.closingDay = closingDay
                         updated.paymentDay = paymentDay
+                        updated.bankID = bankID
+                        updated.network = network
                         store.updateAccount(updated)
                         dismiss()
                     }
@@ -200,9 +212,13 @@ struct AddAccountView: View {
     @State private var used = ""
     @State private var closingDay = 1
     @State private var paymentDay = 20
+    @State private var bankID = ""
+    @State private var network = "Sin especificar"
     var body: some View {
         NavigationStack {
             Form {
+                BankSelector(selection: $bankID)
+                Picker("Red", selection: $network) { ForEach(CardNetworks.names, id: \.self) { Text($0).tag($0) } }
                 TextField("Nombre (ej. Nu)", text: $name)
                 Picker("Tipo", selection: $kind) { ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) } }
                 TextField("Límite o saldo inicial", text: $limit).keyboardType(.decimalPad)
@@ -216,7 +232,7 @@ struct AddAccountView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Guardar") {
-                        store.addAccount(FinanceAccount(name: name.trimmingCharacters(in: .whitespacesAndNewlines), kind: kind, limit: max(0, Double(limit.replacingOccurrences(of: ",", with: ".")) ?? 0), used: max(0, Double(used.replacingOccurrences(of: ",", with: ".")) ?? 0), closingDay: closingDay, paymentDay: paymentDay))
+                        store.addAccount(FinanceAccount(name: name.trimmingCharacters(in: .whitespacesAndNewlines), kind: kind, limit: max(0, Double(limit.replacingOccurrences(of: ",", with: ".")) ?? 0), used: max(0, Double(used.replacingOccurrences(of: ",", with: ".")) ?? 0), closingDay: closingDay, paymentDay: paymentDay, bankID: bankID, network: network))
                         dismiss()
                     }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
