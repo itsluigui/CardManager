@@ -19,14 +19,11 @@ import Combine
     var totalUsedCredit: Double { data.accounts.filter { $0.kind == .credit }.reduce(0) { $0 + $1.used } }
 
     func addAccount(_ account: FinanceAccount) { data.accounts.append(account); save() }
-    @discardableResult
-    func updateAccount(_ account: FinanceAccount) -> Bool {
-        guard let index = data.accounts.firstIndex(where: { $0.id == account.id }) else { return false }
+    func updateAccount(_ account: FinanceAccount) {
+        guard let index = data.accounts.firstIndex(where: { $0.id == account.id }) else { return }
         data.accounts[index] = account
         save()
-        return true
     }
-
     func deleteAccount(_ id: UUID) {
         data.accounts.removeAll { $0.id == id }
         data.movements.removeAll { $0.accountID == id }

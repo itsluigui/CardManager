@@ -63,7 +63,7 @@ struct SummaryCard: View {
 struct AccountsView: View {
     @EnvironmentObject private var store: FinanceStore
     @State private var adding = false
-    @State private var accountToDelete: FinanceAccount?
+    @State private var pendingDeletion: FinanceAccount?
     var body: some View {
         NavigationStack {
             List {
@@ -79,22 +79,16 @@ struct AccountsView: View {
                         }.padding(.vertical, 6)
                     }
                 }.onDelete { offsets in
-                    guard let index = offsets.first, store.accounts.indices.contains(index) else { return }
-                    accountToDelete = store.accounts[index]
+                    if let index = offsets.first { pendingDeletion = store.accounts[index] }
                 }
             }
-            .confirmationDialog("¿Eliminar esta cuenta?", isPresented: Binding(
-                get: { accountToDelete != nil },
-                set: { if !$0 { accountToDelete = nil } }
-            ), titleVisibility: .visible) {
-                Button("Eliminar cuenta y movimientos", role: .destructive) {
-                    if let accountToDelete { store.deleteAccount(accountToDelete.id) }
-                    accountToDelete = nil
+            .confirmationDialog("¿Eliminar tarjeta?", isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }), titleVisibility: .visible) {
+                Button("Eliminar tarjeta y movimientos", role: .destructive) {
+                    if let account = pendingDeletion { store.deleteAccount(account.id) }
+                    pendingDeletion = nil
                 }
-                Button("Cancelar", role: .cancel) { accountToDelete = nil }
-            } message: {
-                Text("Esta acción eliminará también todos los movimientos asociados y no se puede deshacer.")
-            }
+                Button("Cancelar", role: .cancel) { pendingDeletion = nil }
+            } message: { Text("Esta acción también eliminará los movimientos de la tarjeta.") }
             .navigationTitle("Mis tarjetas")
             .toolbar { Button("Agregar", systemImage: "plus") { adding = true } }
             .sheet(isPresented: $adding) { AddAccountView() }
@@ -124,7 +118,7 @@ struct AccountDetailView: View {
                     }
                 }
                 .navigationTitle(account.name)
-                .toolbar { Button("Editar", systemImage: "pencil") { editing = true } }
+                .toolbar { Button("Editar") { editing = true } }
                 .sheet(isPresented: $editing) { EditAccountView(account: account) }
             } else { ContentUnavailableView("Cuenta no encontrada", systemImage: "exclamationmark.circle") }
         }
@@ -152,45 +146,32 @@ struct EditAccountView: View {
         _paymentDay = State(initialValue: account.paymentDay)
     }
 
-    private func parseAmount(_ text: String) -> Double? {
-        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: ",", with: ".")
-        guard let value = Double(normalized), value.isFinite, value >= 0 else { return nil }
-        return value
-    }
-
-    private var canSave: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        parseAmount(limit) != nil && parseAmount(used) != nil
+    private func number(_ value: String) -> Double? {
+        Double(value.replacingOccurrences(of: ",", with: "."))
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Datos de la cuenta") {
-                    TextField("Nombre", text: $name)
-                    Picker("Tipo", selection: $kind) {
-                        ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    TextField("Límite o saldo inicial", text: $limit).keyboardType(.decimalPad)
-                    TextField("Monto utilizado / deuda", text: $used).keyboardType(.decimalPad)
+                TextField("Nombre", text: $name)
+                Picker("Tipo", selection: $kind) {
+                    ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) }
                 }
-                Section("Fechas") {
-                    Stepper("Día de corte: \(closingDay)", value: $closingDay, in: 1...31)
-                    Stepper("Día de pago: \(paymentDay)", value: $paymentDay, in: 1...31)
-                }
-                Section {
-                    Text("Al corregir el saldo, se conserva el historial de movimientos. Los movimientos nuevos se aplicarán sobre el saldo corregido.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                TextField("Límite o saldo inicial", text: $limit).keyboardType(.decimalPad)
+                TextField("Monto utilizado / deuda", text: $used).keyboardType(.decimalPad)
+                Stepper("Día de corte: \(closingDay)", value: $closingDay, in: 1...31)
+                Stepper("Día de pago: \(paymentDay)", value: $paymentDay, in: 1...31)
+                Text("Corregir el monto utilizado no altera el historial de movimientos.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            .navigationTitle("Editar cuenta")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Editar tarjeta")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") { dismiss() }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar cambios") {
-                        guard let newLimit = parseAmount(limit), let newUsed = parseAmount(used) else { return }
+                    Button("Guardar") {
+                        guard let newLimit = number(limit), let newUsed = number(used) else { return }
                         var updated = account
                         updated.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
                         updated.kind = kind
@@ -198,8 +179,12 @@ struct EditAccountView: View {
                         updated.used = newUsed
                         updated.closingDay = closingDay
                         updated.paymentDay = paymentDay
-                        if store.updateAccount(updated) { dismiss() }
-                    }.disabled(!canSave)
+                        store.updateAccount(updated)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                              number(limit) == nil || number(used) == nil ||
+                              (number(limit) ?? -1) < 0 || (number(used) ?? -1) < 0)
                 }
             }
         }
