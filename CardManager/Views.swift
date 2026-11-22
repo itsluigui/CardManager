@@ -139,25 +139,33 @@ struct AccountDetailView: View {
     var body: some View {
         Group {
             if let account = store.accounts.first(where: { $0.id == accountID }) {
-                List {
-                    LabeledContent("Tipo", value: account.kind.rawValue)
-                    LabeledContent("Banco", value: BankCatalog.name(for: account.bankID))
-                    LabeledContent("Red", value: account.network)
-                    LabeledContent("Límite / saldo inicial", value: money(account.limit))
-                    LabeledContent("Usado", value: money(account.used))
-                    LabeledContent("Disponible", value: money(account.available))
-                    LabeledContent("Corte", value: "Día \(account.closingDay)")
-                    LabeledContent("Pago", value: "Día \(account.paymentDay)")
-                    Section("Planes y vencimientos") {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            LabeledContent("Tipo", value: account.kind.rawValue)
+                            LabeledContent("Banco", value: BankCatalog.name(for: account.bankID))
+                            LabeledContent("Red", value: account.network)
+                            LabeledContent("Límite / saldo inicial", value: money(account.limit))
+                            LabeledContent("Usado", value: money(account.used))
+                            LabeledContent("Disponible", value: money(account.available))
+                            LabeledContent("Corte", value: "Día \(account.closingDay)")
+                            LabeledContent("Pago", value: "Día \(account.paymentDay)")
+                        }.padding(16).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
                         AccountPlansSection(account: account)
-                            .buttonStyle(.borderless)
-                    }
-                    Section("Movimientos") {
+                        Text("Movimientos").font(.headline)
                         ForEach(store.movements.filter { $0.accountID == accountID }) { m in
-                            HStack { VStack(alignment: .leading) { Text(m.title); Text(m.date, style: .date).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(m.isPayment ? "−" : "+")\(money(m.amount))") }
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(m.title)
+                                    Text(m.date, style: .date).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text("\(m.isPayment ? "−" : "+")\(money(m.amount))")
+                            }.padding(12).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 12))
                         }
-                    }
+                    }.padding(16)
                 }
+                .background(Color.cmBackground.ignoresSafeArea())
                 .navigationTitle(account.name)
                 .toolbar { Button("Editar") { editing = true } }
                 .sheet(isPresented: $editing) { EditAccountView(account: account) }

@@ -11,17 +11,25 @@ struct PaymentCountdown: View {
     }
 }
 
+// The detail screen uses one presentation owner for ALL plan actions.
+// Never attach separate sheets or confirmation dialogs to rows inside a List.
+private enum PlanSheet: Identifiable {
+    case add(UUID)
+    case edit(UUID)
+    var id: String {
+        switch self { case .add(let id): return "add-\(id.uuidString)"; case .edit(let id): return "edit-\(id.uuidString)" }
+    }
+}
+
 struct PlanRow: View {
-    @EnvironmentObject private var store: FinanceStore
     let plan: InstallmentPlan
-    @State private var editing = false
-    @State private var confirmPayment = false
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(plan.title).font(.subheadline.bold())
-                    Text(plan.isInterestFree ? "Meses sin intereses" : "Plan de pagos / préstamo").font(.caption2).foregroundStyle(.secondary)
+                    Text(plan.isInterestFree ? "Meses sin intereses" : "Plan de pagos / préstamo")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(mxn(plan.monthlyAmount)).font(.subheadline.bold()).foregroundStyle(Color.cmGreen)
@@ -38,55 +46,94 @@ struct PlanRow: View {
                 }
             }.font(.caption2).foregroundStyle(.secondary)
             ProgressView(value: Double(plan.paidMonths), total: Double(max(plan.totalMonths, 1))).tint(.cmGreen)
-            HStack {
-                if plan.isFinished { Text("Liquidado").foregroundStyle(Color.cmGreen).font(.caption.bold()) }
-                else { PaymentCountdown(date: plan.nextPaymentDate) }
-                Spacer()
-                Button("Editar") { editing = true }
-                    .font(.caption.bold()).foregroundStyle(Color.cmGreen)
-                if !plan.isFinished {
-                    Button("Marcar cuota pagada") { confirmPayment = true }
-                        .font(.caption.bold()).foregroundStyle(Color.cmGreen)
-                }
-            }
-        }.padding(14).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
-            .buttonStyle(.borderless)
-            .sheet(isPresented: $editing) { EditPlanView(plan: plan) }
-            .confirmationDialog("Confirmar mensualidad pagada", isPresented: $confirmPayment, titleVisibility: .visible) {
-                Button("Confirmar pago de " + mxn(plan.monthlyAmount)) {
-                    store.markInstallmentPaid(plan.id)
-                }
-                Button("Cancelar", role: .cancel) { }
-            } message: {
-                Text("Se registrará una mensualidad pagada de \(plan.title). Esta acción no modifica automáticamente la deuda de la cuenta.")
-            }
+            if plan.isFinished { Text("Liquidado").font(.caption.bold()).foregroundStyle(Color.cmGreen) }
+            else { PaymentCountdown(date: plan.nextPaymentDate) }
+        }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
 struct AccountPlansSection: View {
     @EnvironmentObject private var store: FinanceStore
     let account: FinanceAccount
-    @State private var adding = false
+    @State private var activeSheet: PlanSheet?
+    @State private var paymentPlanID: UUID?
+    @State private var deletionID: UUID?
+    private var accountPlans: [InstallmentPlan] { store.plans(for: account.id) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text(account.kind == .loan ? "Mensualidades del préstamo" : "Compras a meses y MSI").font(.headline)
                 Spacer()
-                Button { adding = true } label: { Label("Agregar", systemImage: "plus.circle.fill").font(.caption.bold()) }.tint(.cmGreen)
+                Button { activeSheet = .add(account.id) } label: {
+                    Label("Agregar", systemImage: "plus.circle.fill").font(.subheadline.bold())
+                }.buttonStyle(.plain).foregroundStyle(Color.cmGreen)
             }
-            if store.plans(for: account.id).isEmpty {
+            if accountPlans.isEmpty {
                 Text("Sin planes registrados. Agrega cada compra a MSI o el calendario de tu préstamo.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            ForEach(store.plans(for: account.id)) { plan in
-                PlanRow(plan: plan)
-                    .contextMenu { Button("Eliminar plan", role: .destructive) { store.deletePlan(plan.id) } }
+            ForEach(accountPlans) { plan in
+                VStack(alignment: .leading, spacing: 9) {
+                    PlanRow(plan: plan)
+                    HStack(spacing: 18) {
+                        Button { activeSheet = .edit(plan.id) } label: {
+                            Label("Editar", systemImage: "pencil")
+                        }.buttonStyle(.plain)
+                        if !plan.isFinished {
+                            Button { paymentPlanID = plan.id } label: {
+                                Label("Registrar pago", systemImage: "checkmark.circle")
+                            }.buttonStyle(.plain)
+                        }
+                        Spacer(minLength: 0)
+                        Button(role: .destructive) { deletionID = plan.id } label: {
+                            Image(systemName: "trash")
+                        }.buttonStyle(.plain)
+                    }
+                    .font(.caption.bold()).foregroundStyle(Color.cmGreen)
+                    .padding(.horizontal, 12).padding(.bottom, 10)
+                }
+                .background(Color.cmPanel.opacity(0.4), in: RoundedRectangle(cornerRadius: 16))
+                .id(plan.id)
             }
-            Text("Marcar una cuota como pagada actualiza el plan, pero no cambia automáticamente el saldo de la cuenta. Registra también el pago en Movimientos para actualizar la deuda.")
+            Text("Los pagos de mensualidades son manuales y no modifican automáticamente la deuda. Registra también el movimiento correspondiente.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
-        .buttonStyle(.borderless)
-        .sheet(isPresented: $adding) { AddPlanView(account: account) }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(item: $activeSheet) { target in
+            switch target {
+            case .add:
+                AddPlanView(account: account)
+            case .edit(let id):
+                if let plan = store.plans.first(where: { $0.id == id && $0.accountID == account.id }) {
+                    EditPlanView(plan: plan)
+                } else { Text("Plan no encontrado") }
+            }
+        }
+        .alert("Confirmar pago", isPresented: Binding(
+            get: { paymentPlanID != nil },
+            set: { if !$0 { paymentPlanID = nil } }
+        )) {
+            Button("Cancelar", role: .cancel) { paymentPlanID = nil }
+            Button("Sí, registrar una mensualidad") {
+                if let id = paymentPlanID { store.markInstallmentPaid(id) }
+                paymentPlanID = nil
+            }
+        } message: {
+            if let id = paymentPlanID, let plan = store.plans.first(where: { $0.id == id }) {
+                Text("¿Registrar un pago de \(mxn(plan.monthlyAmount)) para \(plan.title)? No se modificará automáticamente el saldo de la cuenta.")
+            } else { Text("Selecciona un plan válido.") }
+        }
+        .confirmationDialog("Eliminar plan", isPresented: Binding(
+            get: { deletionID != nil }, set: { if !$0 { deletionID = nil } }
+        ), titleVisibility: .visible) {
+            Button("Eliminar definitivamente", role: .destructive) {
+                if let id = deletionID { store.deletePlan(id) }
+                deletionID = nil
+            }
+            Button("Cancelar", role: .cancel) { deletionID = nil }
+        } message: { Text("Esta acción elimina el plan y no se puede deshacer.") }
     }
 }
 
