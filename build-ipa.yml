@@ -19,17 +19,29 @@ jobs:
           echo "SWIFT FILES:"
           find CardManager -name "*.swift" -print
           echo "WALLET CHECK:"
-          grep -nF "PremiumHome().tabItem" CardManager/Views.swift
+          grep -nF "StudioHome().tabItem" CardManager/Views.swift
           test -f CardManager/PremiumScreens.swift
           grep -q "struct PremiumWallet: View" CardManager/PremiumScreens.swift
           test -f CardManager/FinancePlusViews.swift
           grep -q 'struct InstallmentScheduleView: View' CardManager/FinancePlusViews.swift
           grep -q 'struct CreditHealthView: View' CardManager/FinancePlusViews.swift
           grep -q 'struct DebitAccountsView: View' CardManager/FinancePlusViews.swift
+          test -f CardManager/StudioScreens.swift
+          grep -q "struct StudioDebit: View" CardManager/StudioScreens.swift
+          test -f CardManager/FinanceIntelligence.swift
           test -f CardManager/ProFeatures.swift
           grep -q "struct WalletView: View" CardManager/ProFeatures.swift
           echo "SOURCE HASH:"
           shasum -a 256 CardManager/Views.swift
+
+      - name: Parse Swift source files
+        run: swiftc -frontend -parse CardManager/*.swift
+
+      - name: Test financial calculation engine
+        run: |
+          swiftc CardManager/FinanceIntelligence.swift CardManager/Models.swift Tests/FinanceEngineChecks.swift \
+            -o "$RUNNER_TEMP/cardmanager-finance-tests"
+          "$RUNNER_TEMP/cardmanager-finance-tests"
 
       - name: Install XcodeGen
         run: brew install xcodegen
