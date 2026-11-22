@@ -11,8 +11,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        
+      - name: Verify Card Manager source
+        run: |
+          echo "COMMIT:"
+          git rev-parse HEAD
+          echo "SWIFT FILES:"
+          find CardManager -name "*.swift" -print
+          echo "WALLET CHECK:"
+          grep -n "WalletView()" CardManager/Views.swift || true
+          echo "SOURCE HASH:"
+          shasum -a 256 CardManager/Views.swift
 
-      - name: Install XcodeGen
+       - name: Install XcodeGen
         run: brew install xcodegen
 
       - name: Generate Xcode project
