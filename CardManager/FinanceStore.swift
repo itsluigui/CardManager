@@ -53,7 +53,7 @@ import Combine
             schedule(for: plan).filter { FinanceCycleMath.inMonth($0.dueDate, of: month) && $0.paidAmount < $0.amount - 0.005 }
                 .map { entry in
                     MonthObligation(id: plan.id.uuidString + "-" + String(entry.installment), accountID: plan.accountID, title: plan.title,
-                                    subtitle: "Préstamo · cuota \(entry.installment)/\(plan.totalMonths)", amount: max(0,entry.amount-entry.paidAmount),
+                                    subtitle: "Préstamo · cuota \(entry.installment)/\(plan.totalMonths)", amount: max(0, entry.amount - entry.paidAmount),
                                     dueDate: entry.dueDate, reliability: .scheduled, isCard: false)
                 }
         }
@@ -61,11 +61,88 @@ import Combine
             .flatMap { schedule(for: $0) }
             .filter { FinanceCycleMath.inMonth($0.dueDate, of: month) }
             .reduce(0) { $0 + max(0, $1.amount - $1.paidAmount) }
-        let unverified = creditAccounts.filter { card in
-            card.used > 0.005 && !data.statements.contains(where: { $0.accountID == card.id && FinanceCycleMath.inMonth($0.dueDate, of: month) })
-        }.map(\.id)
-        let unplannedLoans = loanAccounts.filter { loan in loan.used > 0.005 && plans(for: loan.id).isEmpty }.map(\.id)
-        return MonthOverview(date: month, obligations: (billItems + loanItems).sorted { $0.dueDate < $1.dueDate }, unverifiedCards: unverified, unplannedLoans: unplannedLoans, informationalMSI: msi)
+
+        let monthEnd = FinanceCycleMath.monthEnd(month)
+        var missingItems: [PlannerStatusItem] = []
+        var futureItems: [PlannerStatusItem] = []
+
+        for card in creditAccounts where card.used > 0.005 {
+            if data.statements.contains(where: { $0.accountID == card.id && FinanceCycleMath.inMonth($0.dueDate, of: month) && $0.pending > 0.005 }) {
+                continue
+            }
+            let futureStatement = data.statements
+                .filter { $0.accountID == card.id && $0.pending > 0.005 && $0.dueDate > monthEnd }
+                .sorted { $0.dueDate < $1.dueDate }
+                .first
+            if let bill = futureStatement {
+                futureItems.append(PlannerStatusItem(
+                    id: "future-card-\(card.id.uuidString)",
+                    accountID: card.id,
+                    title: card.name,
+                    detail: "Ya hay un estado de cuenta capturado. Próximo vencimiento: \(bill.dueDate.formatted(date: .abbreviated, time: .omitted)).",
+                    actionLabel: "Ver siguiente",
+                    dueDate: bill.dueDate,
+                    kind: .nextCardStatement
+                ))
+            } else if !data.statements.contains(where: { $0.accountID == card.id && FinanceCycleMath.inMonth($0.dueDate, of: month) && $0.pending <= 0.005 }) {
+                missingItems.append(PlannerStatusItem(
+                    id: "missing-card-\(card.id.uuidString)",
+                    accountID: card.id,
+                    title: card.name,
+                    detail: "No hay pago confirmado para este mes. Captura el corte o el pago para no generar intereses.",
+                    actionLabel: "Capturar corte",
+                    dueDate: nil,
+                    kind: .missingCardStatement
+                ))
+            }
+        }
+
+        for loan in loanAccounts where loan.used > 0.005 {
+            let loanPlans = plans(for: loan.id)
+            if loanPlans.isEmpty {
+                missingItems.append(PlannerStatusItem(
+                    id: "missing-loan-\(loan.id.uuidString)",
+                    accountID: loan.id,
+                    title: loan.name,
+                    detail: "No hay calendario de cuotas. Registra las mensualidades para saber qué toca pagar en el mes.",
+                    actionLabel: "Agregar plan",
+                    dueDate: nil,
+                    kind: .missingLoanSchedule
+                ))
+                continue
+            }
+            let nextLoanEntry: (InstallmentPlan, PaymentScheduleOverride)? = loanPlans
+                .compactMap { plan in
+                    schedule(for: plan)
+                        .filter { $0.paidAmount < $0.amount - 0.005 }
+                        .sorted { $0.dueDate < $1.dueDate }
+                        .first
+                        .map { (plan, $0) }
+                }
+                .sorted { $0.1.dueDate < $1.1.dueDate }
+                .first
+            guard let nextLoanEntry else { continue }
+            let nextDue = nextLoanEntry.1.dueDate
+            if !FinanceCycleMath.inMonth(nextDue, of: month) && nextDue > monthEnd {
+                futureItems.append(PlannerStatusItem(
+                    id: "future-loan-\(loan.id.uuidString)",
+                    accountID: loan.id,
+                    title: loan.name,
+                    detail: "Calendario registrado. Próxima cuota: \(nextDue.formatted(date: .abbreviated, time: .omitted)).",
+                    actionLabel: "Ver calendario",
+                    dueDate: nextDue,
+                    kind: .nextLoanInstallment
+                ))
+            }
+        }
+
+        return MonthOverview(
+            date: month,
+            obligations: (billItems + loanItems).sorted { $0.dueDate < $1.dueDate },
+            missingItems: missingItems,
+            futureItems: futureItems,
+            informationalMSI: msi
+        )
     }
     func debitIncome(in month: Date) -> Double {
         data.movements.filter { m in

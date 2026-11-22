@@ -272,17 +272,75 @@ struct StudioMonthPlan: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Label("Importes que aún faltan", systemImage: "exclamationmark.triangle.fill")
                                 .font(.headline).foregroundStyle(Studio.amber)
-                            Text("Hay tarjetas sin pago confirmado o préstamos sin plan de cuotas. El total conocido NO representa necesariamente todo lo que pagarás este mes.")
+                            Text("Solo aparecen productos del mes actual cuyo importe todavía no está confirmado o que aún no tienen calendario suficiente para calcular el vencimiento.")
                                 .font(.caption).foregroundStyle(Studio.muted)
-                            ForEach(store.creditAccounts.filter { overview.unverifiedCards.contains($0.id) }) { card in
-                                Button { editAccount = card } label: {
-                                    HStack { CMBrandBadge(account: card, size: 35); Text(card.name); Spacer(); Text("Capturar corte").font(.caption).foregroundStyle(Studio.green); Image(systemName: "chevron.right") }
-                                }.buttonStyle(.plain).padding(.vertical, 5)
+                            ForEach(overview.missingItems) { item in
+                                if item.kind == .missingLoanSchedule, let loan = store.accounts.first(where: { $0.id == item.accountID }) {
+                                    NavigationLink(destination: AccountDetailView(accountID: loan.id)) {
+                                        HStack(spacing: 10) {
+                                            CMBrandBadge(account: loan, size: 35)
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(item.title)
+                                                Text(item.detail).font(.caption2).foregroundStyle(Studio.muted)
+                                            }
+                                            Spacer()
+                                            Text(item.actionLabel).font(.caption).foregroundStyle(Studio.green)
+                                            Image(systemName: "chevron.right")
+                                        }
+                                    }.buttonStyle(.plain).padding(.vertical, 5)
+                                } else if let card = store.accounts.first(where: { $0.id == item.accountID }) {
+                                    Button { editAccount = card } label: {
+                                        HStack(spacing: 10) {
+                                            CMBrandBadge(account: card, size: 35)
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(item.title)
+                                                Text(item.detail).font(.caption2).foregroundStyle(Studio.muted)
+                                            }
+                                            Spacer()
+                                            Text(item.actionLabel).font(.caption).foregroundStyle(Studio.green)
+                                            Image(systemName: "chevron.right")
+                                        }
+                                    }.buttonStyle(.plain).padding(.vertical, 5)
+                                }
                             }
-                            ForEach(store.loanAccounts.filter { overview.unplannedLoans.contains($0.id) }) { loan in
-                                NavigationLink(destination: AccountDetailView(accountID: loan.id)) {
-                                    HStack { CMBrandBadge(account: loan, size: 35); Text(loan.name); Spacer(); Text("Agregar plan").font(.caption).foregroundStyle(Studio.green); Image(systemName: "chevron.right") }
-                                }.buttonStyle(.plain).padding(.vertical, 5)
+                        }
+                    }
+                }
+                if !overview.futureItems.isEmpty {
+                    StudioSurface {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Ya registrados para después", systemImage: "calendar.badge.checkmark")
+                                .font(.headline).foregroundStyle(Studio.blue)
+                            Text("Estos productos ya tienen una fecha futura registrada y no cuentan como faltantes del mes actual.")
+                                .font(.caption).foregroundStyle(Studio.muted)
+                            ForEach(overview.futureItems) { item in
+                                if item.kind == .nextLoanInstallment, let loan = store.accounts.first(where: { $0.id == item.accountID }) {
+                                    NavigationLink(destination: AccountDetailView(accountID: loan.id)) {
+                                        HStack(spacing: 10) {
+                                            CMBrandBadge(account: loan, size: 35)
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(item.title)
+                                                Text(item.detail).font(.caption2).foregroundStyle(Studio.muted)
+                                            }
+                                            Spacer()
+                                            Text(item.actionLabel).font(.caption).foregroundStyle(Studio.green)
+                                            Image(systemName: "chevron.right")
+                                        }
+                                    }.buttonStyle(.plain).padding(.vertical, 5)
+                                } else if let card = store.accounts.first(where: { $0.id == item.accountID }) {
+                                    Button { editAccount = card } label: {
+                                        HStack(spacing: 10) {
+                                            CMBrandBadge(account: card, size: 35)
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(item.title)
+                                                Text(item.detail).font(.caption2).foregroundStyle(Studio.muted)
+                                            }
+                                            Spacer()
+                                            Text(item.actionLabel).font(.caption).foregroundStyle(Studio.green)
+                                            Image(systemName: "chevron.right")
+                                        }
+                                    }.buttonStyle(.plain).padding(.vertical, 5)
+                                }
                             }
                         }
                     }

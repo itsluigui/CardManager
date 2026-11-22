@@ -80,8 +80,26 @@ struct AccountPlansSection: View {
                 }.buttonStyle(.plain).foregroundStyle(Color.cmGreen)
             }
             if accountPlans.isEmpty {
-                Text("Sin planes registrados. Agrega cada compra a MSI o el calendario de tu préstamo.")
-                    .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Sin planes registrados. Agrega cada compra a MSI o el calendario de tu préstamo.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if account.kind == .loan {
+                        Button { activeSheet = .add(account.id) } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "calendar.badge.plus").foregroundStyle(Color.cmGreen)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Crear calendario visual del préstamo").font(.subheadline.bold())
+                                    Text("Define cuotas, siguiente vencimiento y abre después el calendario para ajustar importes por mes.")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Color.cmGreen)
+                            }
+                            .padding(14)
+                            .background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
+                        }.buttonStyle(.plain)
+                    }
+                }
             }
             ForEach(accountPlans) { plan in
                 VStack(alignment: .leading, spacing: 9) {

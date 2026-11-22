@@ -758,7 +758,7 @@ struct PremiumMore: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    Text("Card Manager Pro · 1.0.2 · Studio Beta").font(.caption2).foregroundStyle(.secondary)
+                    Text("Card Manager Pro · 1.0.3 · Studio Beta").font(.caption2).foregroundStyle(.secondary)
                 }.padding(18).padding(.bottom, 125)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)

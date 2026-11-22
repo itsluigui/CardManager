@@ -10,6 +10,11 @@ enum FinanceCycleMath {
         let count = calendar.range(of: .day, in: .month, for: base)?.count ?? 28
         return calendar.date(byAdding: .day, value: max(1, min(day, count)) - 1, to: base) ?? base
     }
+    static func monthEnd(_ month: Date, calendar: Calendar = .current) -> Date {
+        let start = monthStart(month, calendar: calendar)
+        let next = calendar.date(byAdding: DateComponents(month: 1, day: -1), to: start) ?? start
+        return calendar.startOfDay(for: next)
+    }
     static func statementDate(posting: Date, closingDay: Int, calendar: Calendar = .current) -> Date {
         let base = monthStart(posting, calendar: calendar)
         let close = monthDate(base, day: closingDay, calendar: calendar)
@@ -40,16 +45,27 @@ struct MonthObligation: Identifiable {
     let isCard: Bool
 }
 
+struct PlannerStatusItem: Identifiable {
+    enum Kind: Equatable { case missingCardStatement, missingLoanSchedule, nextCardStatement, nextLoanInstallment }
+    let id: String
+    let accountID: UUID
+    let title: String
+    let detail: String
+    let actionLabel: String
+    let dueDate: Date?
+    let kind: Kind
+}
+
 struct MonthOverview {
     let date: Date
     let obligations: [MonthObligation]
-    let unverifiedCards: [UUID]
-    let unplannedLoans: [UUID]
+    let missingItems: [PlannerStatusItem]
+    let futureItems: [PlannerStatusItem]
     let informationalMSI: Double
     var confirmedCardTotal: Double { obligations.filter(\.isCard).reduce(0) { $0 + $1.amount } }
     var scheduledLoanTotal: Double { obligations.filter { !$0.isCard }.reduce(0) { $0 + $1.amount } }
     var combinedKnownTotal: Double { confirmedCardTotal + scheduledLoanTotal }
-    var hasUnknownAmounts: Bool { !unverifiedCards.isEmpty || !unplannedLoans.isEmpty }
+    var hasUnknownAmounts: Bool { !missingItems.isEmpty }
 }
 
 /// Accounting sign rules shared by the app and the standalone test suite.
