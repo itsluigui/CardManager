@@ -41,6 +41,22 @@ struct FinanceAccount: Identifiable, Codable {
     var utilization: Double { limit > 0 ? used / limit : 0 }
 }
 
+enum MovementType: String, Codable, CaseIterable, Identifiable {
+    case expense = "Gasto", income = "Ingreso", transferOut = "Transferencia enviada", transferIn = "Transferencia recibida"
+    case purchase = "Compra", cardPayment = "Pago de tarjeta", refund = "Devolución", interest = "Interés", fee = "Comisión"
+    case loanDisbursement = "Desembolso", loanPayment = "Abono de préstamo", adjustment = "Ajuste"
+    var id: String { rawValue }
+    static func choices(for kind: AccountKind) -> [MovementType] {
+        switch kind {
+        case .debit: return [.expense, .income, .refund, .adjustment]
+        case .credit: return [.purchase, .cardPayment, .refund, .interest, .fee, .adjustment]
+        case .loan: return [.loanDisbursement, .loanPayment, .interest, .fee, .adjustment]
+        }
+    }
+    var reducesDebt: Bool { self == .cardPayment || self == .loanPayment || self == .refund }
+    var addsCash: Bool { self == .income || self == .refund || self == .transferIn }
+}
+
 struct FinanceMovement: Identifiable, Codable {
     var id = UUID()
     var accountID: UUID
@@ -48,6 +64,31 @@ struct FinanceMovement: Identifiable, Codable {
     var amount: Double
     var date: Date = .now
     var isPayment: Bool = false
+    var type: MovementType? = nil // nil keeps older saved records compatible
+    var postingDate: Date? = nil
+    var statementOverride: Date? = nil
+    var notes: String = ""
+    var transferGroupID: UUID? = nil
+    enum CodingKeys: String, CodingKey { case id, accountID, title, amount, date, isPayment, type, postingDate, statementOverride, notes, transferGroupID }
+    init(id: UUID = UUID(), accountID: UUID, title: String, amount: Double, date: Date = .now, isPayment: Bool = false, type: MovementType? = nil, postingDate: Date? = nil, statementOverride: Date? = nil, notes: String = "", transferGroupID: UUID? = nil) {
+        self.id = id; self.accountID = accountID; self.title = title; self.amount = amount; self.date = date
+        self.isPayment = isPayment; self.type = type; self.postingDate = postingDate; self.statementOverride = statementOverride
+        self.notes = notes; self.transferGroupID = transferGroupID
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        accountID = try c.decode(UUID.self, forKey: .accountID)
+        title = try c.decode(String.self, forKey: .title)
+        amount = try c.decode(Double.self, forKey: .amount)
+        date = try c.decode(Date.self, forKey: .date)
+        isPayment = try c.decodeIfPresent(Bool.self, forKey: .isPayment) ?? false
+        type = try c.decodeIfPresent(MovementType.self, forKey: .type)
+        postingDate = try c.decodeIfPresent(Date.self, forKey: .postingDate)
+        statementOverride = try c.decodeIfPresent(Date.self, forKey: .statementOverride)
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        transferGroupID = try c.decodeIfPresent(UUID.self, forKey: .transferGroupID)
+    }
 }
 
 struct InstallmentPlan: Identifiable, Codable {

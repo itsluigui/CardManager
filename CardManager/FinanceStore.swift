@@ -81,9 +81,10 @@ import Combine
         // Debit balance = limit - used. A transfer changes used, not limit.
         data.accounts[source].used += amount
         data.accounts[target].used -= amount
-        let ref = UUID().uuidString.prefix(6)
-        data.movements.append(FinanceMovement(accountID: sourceID, title: "Transferencia enviada #\(ref)", amount: amount, date: date, isPayment: false))
-        data.movements.append(FinanceMovement(accountID: targetID, title: "Transferencia recibida #\(ref)", amount: amount, date: date, isPayment: true))
+        let group = UUID()
+        let ref = group.uuidString.prefix(6)
+        data.movements.append(FinanceMovement(accountID: sourceID, title: "Transferencia enviada #\(ref)", amount: amount, date: date, isPayment: false, type: .transferOut, transferGroupID: group))
+        data.movements.append(FinanceMovement(accountID: targetID, title: "Transferencia recibida #\(ref)", amount: amount, date: date, isPayment: true, type: .transferIn, transferGroupID: group))
         save()
     }
     func markInstallmentPaid(_ id: UUID) {
@@ -143,43 +144,86 @@ import Combine
         data.plans.removeAll { $0.accountID == id }
         save()
     }
-    func addMovement(_ movement: FinanceMovement) {
-        guard movement.amount.isFinite, movement.amount > 0,
-              let i = data.accounts.firstIndex(where: { $0.id == movement.accountID }) else { return }
-        let signed = movement.isPayment ? -movement.amount : movement.amount
-        if data.accounts[i].kind == .debit {
-            // Debit uses limit as opening balance and used as signed net spending.
-            // Negative used represents deposits exceeding the opening balance.
-            guard movement.isPayment || data.accounts[i].available >= movement.amount else { return }
-            data.accounts[i].used += signed
-        } else {
-            data.accounts[i].used = max(0, data.accounts[i].used + signed)
+    // A single sign convention: positive increases outstanding debt or debit spending.
+    // Legacy records without a type keep their original sign semantics.
+    func movementEffect(_ movement: FinanceMovement, kind: AccountKind) -> Double {
+        guard let type = movement.type else { return movement.isPayment ? -movement.amount : movement.amount }
+        switch kind {
+        case .debit:
+            return type.addsCash ? -movement.amount : movement.amount
+        case .credit, .loan:
+            return type.reducesDebt ? -movement.amount : movement.amount
         }
-        data.movements.append(movement)
-        save()
+    }
+    private func applying(_ movement: FinanceMovement, multiplier: Double) -> Bool {
+        guard let i = data.accounts.firstIndex(where: { $0.id == movement.accountID }), movement.amount.isFinite, movement.amount > 0 else { return false }
+        let effect = movementEffect(movement, kind: data.accounts[i].kind) * multiplier
+        let resulting = data.accounts[i].used + effect
+        guard resulting.isFinite else { return false }
+        if data.accounts[i].kind == .debit {
+            guard data.accounts[i].limit - resulting >= -0.005 else { return false }
+            data.accounts[i].used = resulting
+        } else {
+            // No silent clamping: a failed edit must not corrupt the original balance.
+            guard resulting >= -0.005 else { return false }
+            data.accounts[i].used = max(0, resulting)
+        }
+        return true
+    }
+    @discardableResult func addMovement(_ movement: FinanceMovement) -> Bool {
+        guard applying(movement, multiplier: 1) else { return false }
+        data.movements.append(movement); save(); return true
+    }
+    @discardableResult func updateMovement(_ changed: FinanceMovement) -> Bool {
+        guard let index = data.movements.firstIndex(where: { $0.id == changed.id }),
+              data.movements[index].transferGroupID == nil else { return false }
+        let old = data.movements[index]
+        // Revert first, apply replacement, roll back if validation fails.
+        guard applying(old, multiplier: -1) else { return false }
+        guard applying(changed, multiplier: 1) else {
+            _ = applying(old, multiplier: 1)
+            return false
+        }
+        data.movements[index] = changed; save(); return true
     }
     func deleteMovement(_ id: UUID) {
         guard let movement = data.movements.first(where: { $0.id == id }) else { return }
-        // A transfer is a linked pair. Undo both legs atomically so the
-        // combined debit balance remains unchanged.
         let items: [FinanceMovement]
-        if let marker = movement.title.split(separator: "#").last,
-           (movement.title.hasPrefix("Transferencia enviada #") || movement.title.hasPrefix("Transferencia recibida #")) {
+        if let group = movement.transferGroupID {
+            items = data.movements.filter { $0.transferGroupID == group }
+        } else if let marker = movement.title.split(separator: "#").last,
+                  (movement.title.hasPrefix("Transferencia enviada #") || movement.title.hasPrefix("Transferencia recibida #")) {
             let key = String(marker)
-            items = data.movements.filter {
-                ($0.title.hasPrefix("Transferencia enviada #") || $0.title.hasPrefix("Transferencia recibida #")) && $0.title.hasSuffix("#" + key)
-            }
+            items = data.movements.filter { ($0.title.hasPrefix("Transferencia enviada #") || $0.title.hasPrefix("Transferencia recibida #")) && $0.title.hasSuffix("#" + key) }
         } else { items = [movement] }
-        for m in items {
-            if let i = data.accounts.firstIndex(where: { $0.id == m.accountID }) {
-                let signed = m.isPayment ? -m.amount : m.amount
-                if data.accounts[i].kind == .debit { data.accounts[i].used -= signed }
-                else { data.accounts[i].used = max(0, data.accounts[i].used - signed) }
-            }
-        }
+        for m in items { _ = applying(m, multiplier: -1) }
         let ids = Set(items.map(\.id))
-        data.movements.removeAll { ids.contains($0.id) }
-        save()
+        data.movements.removeAll { ids.contains($0.id) }; save()
+    }
+
+    func statementDate(for movement: FinanceMovement, account: FinanceAccount) -> Date {
+        if let override = movement.statementOverride { return Calendar.current.startOfDay(for: override) }
+        let cal = Calendar.current
+        let posting = movement.postingDate ?? movement.date
+        let parts = cal.dateComponents([.year, .month, .day], from: posting)
+        let monthStart = cal.date(from: DateComponents(year: parts.year, month: parts.month, day: 1)) ?? posting
+        let nextMonth = cal.date(byAdding: .month, value: (parts.day ?? 1) > account.closingDay ? 1 : 0, to: monthStart) ?? monthStart
+        let days = cal.range(of: .day, in: .month, for: nextMonth)?.count ?? 28
+        return cal.date(byAdding: .day, value: min(max(account.closingDay, 1), days) - 1, to: nextMonth) ?? nextMonth
+    }
+    func paymentDueDate(for statement: Date, account: FinanceAccount) -> Date {
+        let cal = Calendar.current
+        let day = cal.component(.day, from: statement)
+        let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: statement)) ?? statement
+        let targetMonth = cal.date(byAdding: .month, value: account.paymentDay <= day ? 1 : 0, to: monthStart) ?? monthStart
+        let maxDay = cal.range(of: .day, in: .month, for: targetMonth)?.count ?? 28
+        return cal.date(byAdding: .day, value: min(max(account.paymentDay, 1), maxDay) - 1, to: targetMonth) ?? targetMonth
+    }
+    func statementPurchases(accountID: UUID, statement: Date) -> Double {
+        guard let account = accounts.first(where: { $0.id == accountID && $0.kind == .credit }) else { return 0 }
+        let cal = Calendar.current
+        return data.movements.filter { $0.accountID == accountID && cal.isDate(statementDate(for: $0, account: account), inSameDayAs: statement) }
+            .reduce(0) { $0 + movementEffect($1, kind: .credit) }
     }
     private func load() {
         guard let bytes = try? Data(contentsOf: fileURL),

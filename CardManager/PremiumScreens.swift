@@ -341,7 +341,7 @@ private func movementRow(_ m: FinanceMovement, accounts: [FinanceAccount]) -> so
                 .font(.caption2).foregroundStyle(.secondary)
         }
         Spacer()
-        Text((m.isPayment ? "−" : "+") + peso(m.amount))
+        Text((m.type == nil ? (m.isPayment ? "−" : "+") : (m.isPayment ? "+" : "−")) + peso(m.amount))
             .font(.caption.bold()).foregroundStyle(m.isPayment ? Color.cmGreen : .white).lineLimit(1).minimumScaleFactor(0.65)
     }.padding(12).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
 }
@@ -506,6 +506,7 @@ struct PremiumMovements: View {
     @State private var search = ""
     @State private var filter = "Todos"
     @State private var adding = false
+    @State private var editingMovement: FinanceMovement?
     @State private var pendingDelete: UUID?
     private var filtered: [FinanceMovement] {
         store.movements.filter { m in
@@ -530,13 +531,19 @@ struct PremiumMovements: View {
                     }
                     ForEach(filtered) { m in
                         movementRow(m, accounts: store.accounts)
-                            .contextMenu { Button("Eliminar movimiento", role: .destructive) { pendingDelete = m.id } }
+                            .contentShape(Rectangle())
+                            .onTapGesture { editingMovement = m }
+                            .contextMenu {
+                                Button("Editar") { editingMovement = m }
+                                Button("Eliminar movimiento", role: .destructive) { pendingDelete = m.id }
+                            }
                     }
                     if filtered.isEmpty { ContentUnavailableView("Sin movimientos", systemImage: "arrow.left.arrow.right", description: Text("Registra tus compras y pagos manualmente.")) }
                 }.padding(18).padding(.bottom, 75)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(isPresented: $adding) { AddMovementView() }
+                .sheet(item: $editingMovement) { AddMovementView(existing: $0) }
                 .confirmationDialog("¿Eliminar movimiento?", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
                     Button("Eliminar", role: .destructive) { if let id = pendingDelete { store.deleteMovement(id) }; pendingDelete = nil }
                     Button("Cancelar", role: .cancel) { pendingDelete = nil }

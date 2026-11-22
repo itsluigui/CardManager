@@ -136,6 +136,7 @@ struct AccountDetailView: View {
     @EnvironmentObject private var store: FinanceStore
     let accountID: UUID
     @State private var editing = false
+    @State private var editingMovement: FinanceMovement?
     var body: some View {
         Group {
             if let account = store.accounts.first(where: { $0.id == accountID }) {
@@ -160,8 +161,10 @@ struct AccountDetailView: View {
                                     Text(m.date, style: .date).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Text("\(m.isPayment ? "−" : "+")\(money(m.amount))")
-                            }.padding(12).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 12))
+                                Text(money(m.amount))
+                            }.padding(12)
+                            .contentShape(Rectangle())
+                            .onTapGesture { editingMovement = m }.background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 12))
                         }
                     }.padding(16)
                 }
@@ -169,6 +172,7 @@ struct AccountDetailView: View {
                 .navigationTitle(account.name)
                 .toolbar { Button("Editar") { editing = true } }
                 .sheet(isPresented: $editing) { EditAccountView(account: account) }
+                .sheet(item: $editingMovement) { AddMovementView(existing: $0) }
             } else { ContentUnavailableView("Cuenta no encontrada", systemImage: "exclamationmark.circle") }
         }
     }
@@ -318,33 +322,80 @@ struct MovementsView: View {
 struct AddMovementView: View {
     @EnvironmentObject private var store: FinanceStore
     @Environment(\.dismiss) private var dismiss
+    var existing: FinanceMovement? = nil
     @State private var accountID: UUID?
     @State private var title = ""
     @State private var amount = ""
     @State private var date = Date()
-    @State private var isPayment = false
+    @State private var postingDate = Date()
+    @State private var usePostingDate = false
+    @State private var type: MovementType = .purchase
+    @State private var notes = ""
+    @State private var manualPeriod = false
+    @State private var overrideDate = Date()
+    @State private var error = false
+    private var account: FinanceAccount? { store.accounts.first { $0.id == accountID } }
+    private var amountValue: Double { Double(amount.replacingOccurrences(of: ",", with: ".")) ?? 0 }
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Cuenta", selection: $accountID) {
-                    Text("Selecciona").tag(UUID?.none)
-                    ForEach(store.accounts) { a in Text(a.name).tag(Optional(a.id)) }
+                Section("Movimiento") {
+                    Picker("Cuenta", selection: $accountID) {
+                        Text("Selecciona").tag(UUID?.none)
+                        ForEach(store.accounts) { a in Text(a.name).tag(Optional(a.id)) }
+                    }.onChange(of: accountID) { _, _ in
+                        if existing == nil, let a = account { type = MovementType.choices(for: a.kind)[0] }
+                    }
+                    if let account {
+                        Picker("Tipo", selection: $type) {
+                            ForEach(MovementType.choices(for: account.kind)) { option in Text(option.rawValue).tag(option) }
+                        }
+                    }
+                    TextField("Concepto", text: $title)
+                    TextField("Importe en MXN", text: $amount).keyboardType(.decimalPad)
+                    DatePicker("Fecha de operación", selection: $date, displayedComponents: .date)
+                    TextField("Notas (opcional)", text: $notes)
                 }
-                TextField("Concepto", text: $title)
-                TextField("Monto", text: $amount).keyboardType(.decimalPad)
-                DatePicker("Fecha", selection: $date, displayedComponents: .date)
-                Toggle("Pago / ingreso (aumenta saldo en débito)", isOn: $isPayment)
-                Text("En crédito y préstamos: pago reduce deuda, cargo la aumenta. En débito: ingreso aumenta tu saldo y gasto lo reduce. No registres una transferencia entre cuentas propias como ingreso nuevo.").font(.caption).foregroundStyle(.secondary)
+                if let account, account.kind == .credit {
+                    Section("Periodo de facturación") {
+                        Toggle("Fecha de contabilización diferente", isOn: $usePostingDate)
+                        if usePostingDate { DatePicker("Contabilizada", selection: $postingDate, displayedComponents: .date) }
+                        Toggle("Asignar periodo manualmente", isOn: $manualPeriod)
+                        if manualPeriod { DatePicker("Corte asignado", selection: $overrideDate, displayedComponents: .date) }
+                        let draft = FinanceMovement(accountID: account.id, title: title, amount: max(0, amountValue), date: date, type: type, postingDate: usePostingDate ? postingDate : nil, statementOverride: manualPeriod ? overrideDate : nil)
+                        let statement = store.statementDate(for: draft, account: account)
+                        LabeledContent("Corte estimado", value: statement.formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("Pago estimado", value: store.paymentDueDate(for: statement, account: account).formatted(date: .abbreviated, time: .omitted))
+                        Text("Las fechas son estimadas. Confirma el periodo y el pago para no generar intereses con el estado de cuenta bancario.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section {
+                    Text("Los movimientos modifican el saldo registrado. Una devolución de crédito reduce la deuda; un ingreso de débito aumenta tu dinero. No registres dos veces compras MSI ya incluidas en el saldo.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
-            .navigationTitle("Nuevo movimiento")
+            .navigationTitle(existing == nil ? "Nuevo movimiento" : "Editar movimiento")
+            .onAppear {
+                guard let m = existing else { return }
+                accountID = m.accountID; title = m.title; amount = String(m.amount); date = m.date
+                postingDate = m.postingDate ?? m.date; usePostingDate = m.postingDate != nil
+                type = m.type ?? (store.accounts.first(where: { $0.id == m.accountID })?.kind == .debit ? (m.isPayment ? .income : .expense) : (m.isPayment ? .cardPayment : .purchase))
+                notes = m.notes; manualPeriod = m.statementOverride != nil; overrideDate = m.statementOverride ?? m.date
+            }
+            .alert("No se pudo guardar", isPresented: $error) {
+                Button("Entendido", role: .cancel) { }
+            } message: { Text("Revisa el saldo disponible, el tipo y el importe. No se modificaron los datos anteriores.") }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Guardar") {
                         guard let accountID else { return }
-                        store.addMovement(FinanceMovement(accountID: accountID, title: title, amount: Double(amount.replacingOccurrences(of: ",", with: ".")) ?? 0, date: date, isPayment: isPayment))
-                        dismiss()
-                    }.disabled(accountID == nil || title.isEmpty || (Double(amount.replacingOccurrences(of: ",", with: ".")) ?? 0) <= 0)
+                        let movement = FinanceMovement(id: existing?.id ?? UUID(), accountID: accountID, title: title, amount: amountValue, date: date,
+                            isPayment: type.reducesDebt || type.addsCash, type: type,
+                            postingDate: usePostingDate ? postingDate : nil, statementOverride: manualPeriod ? overrideDate : nil, notes: notes)
+                        let ok = existing == nil ? store.addMovement(movement) : store.updateMovement(movement)
+                        if ok { dismiss() } else { error = true }
+                    }.disabled(accountID == nil || title.trimmingCharacters(in: .whitespaces).isEmpty || !amountValue.isFinite || amountValue <= 0)
                 }
             }
         }
