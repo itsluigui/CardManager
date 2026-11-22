@@ -1,178 +1,130 @@
+# 💚 Card Manager Pro — Studio Beta 1.0.3
 
-# 💚 Card Manager Pro
+> **Tu dinero. Tus tarjetas. Un panorama más claro.**
+>
+> Aplicación iOS privada, desarrollada en **SwiftUI**, con datos capturados **manualmente**. Sin SDK bancario, sin acceso a Apple Wallet y sin pagos reales.
 
-### Tu dinero, tus tarjetas, todo bajo control.
+![Versión](https://img.shields.io/badge/versi%C3%B3n-1.0.3-49e773) ![Build](https://img.shields.io/badge/build-103-222222) ![iOS](https://img.shields.io/badge/iOS-17%2B-444444) ![Estado](https://img.shields.io/badge/estado-beta%20sin%20probar%20en%20dispositivo-f3b353)
 
-![Version](https://img.shields.io/badge/Version-1.7.0-39d66b)
-![iOS](https://img.shields.io/badge/iOS-17%2B-black)
-![Swift](https://img.shields.io/badge/Swift-5-orange)
-![SwiftUI](https://img.shields.io/badge/Framework-SwiftUI-blue)
-![Status](https://img.shields.io/badge/Status-Beta-yellow)
+## ¿Qué cambió frente a la versión 1.0.1?
 
----
+Este rediseño **no se limita a cambiar colores**. Organiza la aplicación por tipo de producto y separa cuidadosamente conceptos que en un banco no significan lo mismo: deuda actual, dinero propio, estado de cuenta, saldo al corte, pago para no generar intereses y cuota programada.
 
-## 📱 ¿Qué es Card Manager Pro?
+| Área | Rediseño y comportamiento |
+| --- | --- |
+| **Inicio** | Deuda total; importe conocido a pagar en el mes seleccionado; dinero en débito; crédito libre; barra de utilización; cobertura de pagos conocidos; carrusel de tarjetas y actividad reciente |
+| **Planeador mensual** | Consulta meses anteriores o futuros, importes confirmados de tarjetas, cuotas programadas de préstamos y MSI informativos (sin sumarlos dos veces) |
+| **Tarjetas** | Filtros por crédito/débito/préstamos; saldos específicos del producto; acceso a información detallada |
+| **Débito** | Saldo real, entradas/salidas registradas, depósitos, ingresos, gastos, transferencias externas y transferencias entre tus cuentas; **sin fechas de corte ni MSI** |
+| **Crédito** | Límite y utilización, fechas habituales de corte/pago, compra con fecha de contabilización distinta, captura de estado de cuenta, compras MSI y movimientos |
+| **Préstamos** | Saldo de deuda separado, cuota habitual y calendario individual con importes, fechas y pagos parciales |
+| **Movimientos** | Búsqueda, filtros, selección por mes, edición, categorías de gastos y confirmación para eliminar; pares vinculados protegidos contra edición individual |
+| **Wallet** | Tarjeta grande seleccionada, lista de tarjetas con selección individual y acceso directo al detalle |
+| **Análisis** | Utilización global, barras horizontales de deuda con nombres completos, entradas/salidas de débito de seis meses y categorías de gasto |
+| **Respaldos** | Exportación e importación JSON conservadas; incluye estados de cuenta nuevos y referencias de pagos vinculados |
 
-**Card Manager Pro** es una aplicación de administración financiera personal para iPhone, desarrollada con SwiftUI.
+## 📆 ¿Qué significa «A pagar este mes»?
 
-Su objetivo es ayudarte a gestionar tus tarjetas de crédito y débito, préstamos, compras a meses, movimientos y obligaciones financieras desde una sola aplicación.
+**Nunca se calcula como la suma de las deudas completas.** Se construye únicamente a partir de:
 
-Cuenta con una interfaz moderna de estilo premium, modo oscuro, acentos verde neón, tarjetas visuales y herramientas de análisis financiero.
+1. **Tarjetas de crédito:** pago **para no generar intereses** del estado de cuenta que capturaste, menos el importe pagado que registraste para ese estado de cuenta.
+2. **Préstamos:** cuotas programadas que vencen durante el mes elegido y que todavía no figuran como pagadas en el calendario.
+3. **MSI de tarjetas:** se muestran en un renglón **informativo**, sin añadirse nuevamente al total de tarjetas, porque ya pueden estar incluidos en el pago del estado de cuenta.
 
-> Card Manager Pro es una aplicación de registro manual. No está afiliada a instituciones bancarias ni consulta automáticamente sus sistemas.
+Si falta un estado de cuenta o el plan de un préstamo, el tablero avisa que el **total conocido es parcial**. No inventa el pago mínimo ni presenta el saldo total como una obligación inmediata.
 
----
+**Ejemplo:** deuda total $20,000; pago para no generar intereses confirmado $1,800; préstamo con cuota pendiente $1,200. El total conocido a pagar durante ese mes es $3,000, **no $20,000**. Los MSI se muestran por separado, sin duplicarse. Si alguna tarjeta carece de estado de cuenta, faltarán importes por confirmar.
 
-## ✨ Características principales
+### Capturar un estado de cuenta
 
-### 🏠 1. Dashboard financiero
+1. Abre una tarjeta de **crédito**.
+2. Selecciona **Capturar corte**.
+3. Escribe **saldo al corte**, **pago para no generar intereses**, **pago mínimo**, **fecha de corte**, **fecha límite** e importe ya pagado de ese periodo.
+4. Guarda. El planeador mensual mostrará el importe confirmado en el mes del vencimiento.
 
-Una pantalla de inicio que presenta un panorama general de tus finanzas.
+Registrar el estado **no mueve dinero de ninguna cuenta**. Debes registrar los pagos cuando realmente se realizan.
 
-- Dinero propio disponible.
-- Crédito total autorizado.
-- Crédito utilizado.
-- Crédito disponible.
-- Deuda total registrada.
-- Préstamos pendientes.
-- Balance financiero estimado.
-- Próximos pagos.
-- Acceso rápido a tus tarjetas.
+## 💸 Débito: reglas diferentes a las de crédito
 
-Los saldos de débito, crédito y préstamos se presentan por separado para evitar confundir dinero propio con dinero prestado.
+El saldo disponible de una cuenta de débito es tu **dinero propio**; no se presenta como «línea de crédito - usado» en la interfaz. El formato heredado de almacenamiento se conserva internamente para no romper respaldos anteriores.
 
-### 💳 2. Administración de tarjetas
+| Operación | Saldo de débito | ¿Cuenta como ingreso o gasto de consumo? |
+| --- | --- | --- |
+| Depósito / ingreso | Aumenta | Ingreso manual |
+| Gasto / compra | Disminuye | Gasto |
+| Transferencia recibida desde fuera | Aumenta | Entrada de efectivo, no necesariamente ingreso ganado |
+| Transferencia enviada fuera | Disminuye | Salida de efectivo, no necesariamente gasto de consumo |
+| Transferencia entre dos cuentas propias | Resta de origen, suma en destino | **No modifica el dinero total ni es un ingreso nuevo** |
+| Pago de tarjeta/préstamo desde débito | Disminuye débito, disminuye deuda | Es una transferencia de pago, **no un gasto nuevo** |
+| Devolución | Aumenta | Reintegro |
 
-Registra y administra diferentes productos financieros.
+El resumen de **entradas y salidas de efectivo** incluye transferencias externas y pagos de deuda, pero excluye transferencias entre tus cuentas. El análisis de **gastos por categoría** cuenta compras y gastos de consumo y excluye pagos de tarjeta para evitar duplicaciones.
 
-**Tarjetas de crédito**
-- Institución bancaria.
-- Nombre personalizado.
-- Línea de crédito.
-- Saldo utilizado.
-- Crédito disponible.
-- Porcentaje de utilización.
-- Fecha de corte.
-- Fecha límite de pago.
-- Compras a meses.
+### Pago vinculado desde débito
 
-**Tarjetas de débito**
-- Institución bancaria.
-- Saldo disponible.
-- Ingresos y gastos.
-- Historial de movimientos.
-- Transferencias entre cuentas propias.
+En el detalle de un producto de crédito o préstamo: **Registrar pago desde débito**. Selecciona cuenta origen, monto y fecha; si es tarjeta, puedes asociarlo a un estado de cuenta específico. Tras la confirmación, se registra un par de movimientos ligado por un identificador: salida de débito y reducción de deuda. Si se elimina el par, se revierten ambos saldos y el avance del estado de cuenta al que estuviera ligado.
 
-**Préstamos**
-- Institución financiera.
-- Monto original.
-- Saldo pendiente.
-- Cantidad de mensualidades.
-- Mensualidad programada.
-- Pagos realizados.
-- Próximo vencimiento.
+**Esto registra un pago ya realizado:** la aplicación **no transfiere dinero por ti**.
 
-### 🪪 3. Wallet visual
+## 📊 Indicadores de utilización
 
-Una sección inspirada en la presentación de tarjetas digitales.
+Usamos rangos gráficos orientativos por tarjeta y globales: **verde ≤30 %**, **amarillo >30 % a 60 %**, **naranja >60 %**. También se estima cuánto reducir el saldo para acercarse al 30 %.
 
-- Tarjetas con diseños diferenciados.
-- Identificación visual de instituciones.
-- Consulta de saldos.
-- Selección individual de tarjetas.
-- Acceso a detalles y movimientos.
-- Diseño adaptado a iPhone.
+CONDUSEF recomienda cuidar la proporción utilizada y pagar oportunamente, pero **los colores de la app no son un score oficial de Buró ni un indicador universal de aprobación bancaria**. La salud financiera completa requiere ingresos, gastos, endeudamiento y circunstancias personales que no pueden deducirse solamente del uso del crédito.
 
-### 📆 4. Compras a MSI y préstamos
+## 🔒 Privacidad, compatibilidad y respaldos
 
-Organiza tus compras financiadas y préstamos mediante planes de pago.
+- La información sigue guardándose en `Application Support/cardmanager.json` **localmente**.
+- Bundle ID **sin cambios**: `com.cardmanager.personal.app`.
+- Se conservan los datos existentes: cuentas, movimientos, planes y calendarios individuales. Los campos nuevos tienen valores predeterminados al leer respaldos anteriores.
+- Se recomienda **exportar JSON desde Más → Exportar respaldo ANTES de actualizar**.
+- La importación de JSON **reemplaza** el conjunto actual; no fusiona automáticamente.
+- Nunca publiques respaldos de datos personales, certificados `.p12`, `.mobileprovision` ni contraseñas.
+- No hay acceso a bancos, consulta de Buró, conexión con Apple Pay, ni respaldo iCloud automático.
 
-- Nombre del producto o préstamo.
-- Importe registrado.
-- Número de mensualidades.
-- Mensualidad programada.
-- Mensualidades pagadas.
-- Mensualidades pendientes.
-- Fecha del siguiente vencimiento.
-- Cuenta regresiva.
-- Calendario individual de cuotas.
-- Modificación de importes y fechas.
-- Registro de pagos parciales.
-- Confirmación antes de registrar pagos.
+### Limitaciones a tener presentes
 
-Cada compra puede administrarse independientemente.
+- Un movimiento retroactivo afecta el saldo manual registrado y su periodo de corte **estimado**, pero la fecha real de contabilización puede ser distinta; contrástala con el estado de cuenta.
+- El pago para no generar intereses **no puede inferirse de manera segura del saldo utilizado**; debes capturarlo.
+- La suma de cuotas futuras **no equivale necesariamente** al saldo de liquidación anticipada del préstamo (intereses, seguros, comisiones).
+- Los pagos marcados en el **calendario de cuotas** no alteran automáticamente el saldo del banco: puedes registrar por separado el movimiento real o el pago vinculado, sin volver a contabilizarlo como gasto de consumo.
+- Si concilias manualmente el saldo de una cuenta, una reversión antigua puede ser rechazada para evitar un saldo de débito negativo.
+- La gráfica histórica refleja movimientos **registrados**, no transacciones bancarias sincronizadas.
+- **Es un proyecto fuente beta. No fue compilado con Xcode ni probado en un iPhone durante esta entrega.** La verificación final se realiza en un runner macOS o Xcode y en el dispositivo.
 
-> Los cálculos de mensualidades no sustituyen el estado de cuenta oficial. Los intereses y comisiones pueden modificar el saldo real.
+## 🖥️ Compilación desde Windows con GitHub Actions
 
-### 📊 5. Análisis financiero
+1. Crea un repositorio **privado** o utiliza tu repositorio actual.
+2. Sube **todo el contenido del ZIP** conservando las carpetas `CardManager/`, `.github/workflows/`, `Tests/`, `project.yml` y los archivos `.md`.
+3. Ve a **Actions → Build unsigned iOS IPA → Run workflow**, selecciona la rama y ejecuta.
+4. El workflow ejecuta pruebas del motor financiero, genera el proyecto con XcodeGen, lo compila usando `xcodebuild`, crea `Payload/CardManager.app` y empaqueta el IPA sin firmar.
+5. Descarga **CardManager-unsigned-IPA**, extrae el `.ipa`, y fírmalo en ESign con certificado/perfil válidos para el Bundle ID y tu dispositivo.
+6. **No desinstales la app anterior** antes de exportar tu respaldo y comprobar que la actualización conserva datos.
 
-Herramientas visuales para comprender tu situación financiera.
+### Compilar manualmente en macOS
 
-- Gráficas de utilización de crédito.
-- Distribución de deuda por tarjeta.
-- Barras horizontales con nombres legibles.
-- Comparación de crédito disponible y utilizado.
-- Resumen de préstamos.
-- Seguimiento de saldos.
-- Indicadores de utilización.
+```bash
+brew install xcodegen
+xcodegen generate
+xcodebuild -project CardManager.xcodeproj -scheme CardManager \
+  -configuration Release -sdk iphoneos \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+```
 
-### 🟢 6. Indicadores de utilización crediticia
+### Ejecutar pruebas del motor financiero (macOS o Linux con Swift)
 
-Card Manager Pro utiliza referencias orientativas para identificar el porcentaje de crédito utilizado.
+```bash
+swiftc CardManager/FinanceIntelligence.swift \
+       CardManager/Models.swift \
+       Tests/FinanceEngineChecks.swift \
+       -o finance-checks
+./finance-checks
+```
 
-| Utilización | Indicador | Interpretación |
-|---|---|---|
-| 0 % – 30 % | 🟢 Verde | Dentro de la referencia |
-| Más de 30 % – 60 % | 🟡 Amarillo | Utilización moderada |
-| Más de 60 % | 🟠 Naranja | Utilización elevada |
+Las pruebas incluyen asignación a cortes, días 28/29/30/31, cambio de año, depósito/gasto de débito, compra/pago de crédito, saldo insuficiente y lectura de un respaldo sin campos nuevos.
 
-También permite estimar cuánto tendrías que reducir tu saldo para alcanzar una utilización del 30 %.
-
-**Importante:** estos rangos no constituyen una calificación oficial de Buró de Crédito ni garantizan una mejora de tu historial.
-
-La puntualidad, capacidad de pago, ingresos y nivel de endeudamiento también son factores importantes.
-
-### 💰 7. Control de débito
-
-Administra el dinero que realmente tienes disponible.
-
-- Saldo individual por cuenta.
-- Dinero total disponible.
-- Registro de ingresos.
-- Registro de gastos.
-- Transferencias entre cuentas propias.
-- Historial de movimientos.
-
-Las transferencias entre cuentas propias no deben contabilizarse como ingresos nuevos.
-
-### 📁 8. Respaldos
-
-Herramientas para conservar y recuperar tu información.
-
-- Exportación de respaldos JSON.
-- Importación de respaldos.
-- Almacenamiento local.
-- Confirmación antes de reemplazar datos.
-
-**Advertencia:** importar un respaldo reemplaza los datos actuales; no los fusiona.
-
----
-
-## 🛠️ Tecnologías utilizadas
-
-- Swift 5
-- SwiftUI
-- Xcode
-- XcodeGen
-- GitHub Actions
-- Almacenamiento JSON local
-- iOS 17 o posterior
-
-La aplicación no requiere SDKs bancarios externos.
-
----
-
-## 📂 Estructura del proyecto
+## 🗂️ Estructura principal
 
 ```text
 CardManager/
@@ -180,173 +132,27 @@ CardManager/
 │   ├── CardManagerApp.swift
 │   ├── Models.swift
 │   ├── FinanceStore.swift
-│   ├── Views.swift
-│   ├── PremiumScreens.swift
-│   ├── FinancePlusViews.swift
-│   ├── PaymentFeatures.swift
+│   ├── FinanceIntelligence.swift  # reglas comprobables sin SwiftUI
+│   ├── StudioScreens.swift        # rediseño: Inicio, planeador, débito,
+│   │                             # movimientos, análisis, detalle, Wallet
+│   ├── Views.swift                # formularios y punto de entrada de pestañas
+│   ├── PaymentFeatures.swift      # MSI/préstamos
+│   ├── FinancePlusViews.swift      # línea de cuotas y salud de utilización
+│   ├── PremiumScreens.swift       # estilos compartidos, calendario, Más
 │   └── ProFeatures.swift
-├── .github/
-│   └── workflows/
-│       └── build-ipa.yml
+├── Tests/
+│   └── FinanceEngineChecks.swift
+├── .github/workflows/build-ipa.yml
 ├── project.yml
-├── .gitignore
+├── CHANGELOG.md
+├── QA_CHECKLIST.md
 └── README.md
 ```
 
----
+## 📚 Referencias para el rediseño
 
-## 🚀 Compilación desde Windows
+- CONDUSEF — [Conceptos del estado de cuenta](https://www.gob.mx/condusef/articulos/que-debes-saber-de-una-tarjeta-de-credito?idiom=es) y [uso responsable de crédito](https://www.gob.mx/condusef/es/articulos/lleva-una-buena-relacion-con-el-credito?idiom=es).
+- YNAB — [Los pagos de tarjetas se tratan como transferencias vinculadas](https://support.ynab.com/en_us/credit-card-payments-a-guide-r1_506Q1j).
+- Comentarios de usuarios de Monarch Money sobre [proyección de efectivo](https://www.reddit.com/r/MonarchMoney/comments/1vdng6q/feature_requests/), [calendario de pagos claro](https://www.reddit.com/r/MonarchMoney/comments/1ijhnzf) y [control de recurrentes](https://www.reddit.com/r/MonarchMoney/comments/1w2m0ah/monarch_needs_a_true_manual_recurring_mode/).
 
-Card Manager Pro puede compilarse mediante GitHub Actions utilizando un runner macOS.
-
-### Paso 1. Preparar el repositorio
-
-Sube los archivos a un repositorio privado de GitHub, respetando su estructura original.
-
-### Paso 2. Ejecutar GitHub Actions
-
-1. Abre tu repositorio.
-2. Entra a **Actions**.
-3. Selecciona **Build unsigned iOS IPA**.
-4. Pulsa **Run workflow**.
-5. Selecciona la rama `main`.
-6. Ejecuta el workflow.
-
-### Paso 3. Descargar el IPA
-
-Cuando termine correctamente:
-
-1. Abre la ejecución.
-2. Busca la sección **Artifacts**.
-3. Descarga `CardManager-unsigned-IPA`.
-4. Extrae el archivo IPA.
-
-### Paso 4. Instalar mediante ESign
-
-1. Importa el IPA en ESign.
-2. Selecciona un certificado válido.
-3. Firma la aplicación.
-4. Instálala en el iPhone.
-
-El certificado y el perfil de aprovisionamiento deben ser compatibles con el dispositivo y el identificador de la aplicación.
-
----
-
-## 💻 Compilación manual con Xcode
-
-En macOS:
-
-```bash
-brew install xcodegen
-
-xcodegen generate
-
-xcodebuild \
-  -project CardManager.xcodeproj \
-  -scheme CardManager \
-  -configuration Release \
-  -sdk iphoneos \
-  -destination 'generic/platform=iOS' \
-  -derivedDataPath build \
-  CODE_SIGNING_ALLOWED=NO \
-  build
-```
-
-La aplicación compilada se encontrará en:
-
-`build/Build/Products/Release-iphoneos/CardManager.app`
-
----
-
-## 🔐 Seguridad y almacenamiento
-
-Card Manager Pro almacena la información financiera localmente en el dispositivo.
-
-Ruta utilizada:
-
-`Application Support/cardmanager.json`
-
-**Bundle ID:**
-
-`com.cardmanager.personal.app`
-
-Recomendaciones:
-
-- Exportar respaldos periódicamente.
-- No compartir archivos que contengan información financiera.
-- No publicar certificados P12.
-- No publicar perfiles de aprovisionamiento.
-- No eliminar la aplicación antes de respaldar los datos.
-
----
-
-## ⚠️ Limitaciones actuales
-
-- No existe sincronización bancaria automática.
-- No consulta directamente Buró de Crédito.
-- No detecta automáticamente pagos mediante Apple Pay.
-- No dispone de sincronización iCloud.
-- Los datos financieros requieren actualización manual.
-- Las fechas de pago deben verificarse con cada institución.
-- Los indicadores financieros son orientativos.
-- La aplicación requiere pruebas de compilación y funcionamiento antes de considerarse lista para distribución pública.
-
----
-
-## 🧪 Pruebas recomendadas
-
-Antes de publicar una versión estable:
-
-- [ ] Verificar compilación en Xcode.
-- [ ] Probar instalación mediante ESign.
-- [ ] Comprobar conservación de datos al actualizar.
-- [ ] Registrar y editar tarjetas.
-- [ ] Registrar y editar préstamos.
-- [ ] Agregar compras a MSI.
-- [ ] Editar mensualidades individuales.
-- [ ] Registrar pagos parciales.
-- [ ] Evitar confirmaciones accidentales de pagos.
-- [ ] Validar saldos de débito.
-- [ ] Revisar gráficas e indicadores.
-- [ ] Exportar e importar respaldos.
-- [ ] Comprobar navegación y diseño en iPhone.
-
----
-
-## 🗺️ Próximas mejoras
-
-- Notificaciones automáticas de vencimientos.
-- Integración con Atajos de iOS.
-- Widgets para pantalla de inicio.
-- Protección adicional mediante Face ID.
-- Sincronización opcional con iCloud.
-- Presupuestos mensuales.
-- Administración de suscripciones.
-- Proyecciones de deuda.
-- Herramientas adicionales de planificación financiera.
-
----
-
-## 📌 Información del proyecto
-
-**Nombre:** Card Manager Pro
-
-**Versión:** 1.7.0
-
-**Compilación:** 170
-
-**Plataforma:** iOS
-
-**Lenguaje:** Swift
-
-**Interfaz:** SwiftUI
-
-**Estado:** Beta / En pruebas
-
----
-
-### 💚 Card Manager Pro
-
-**Controla tu dinero. Organiza tus pagos. Entiende tus finanzas.**
-
-Desarrollado para ofrecer una experiencia de administración financiera personal moderna, organizada y sencilla.
+**Estado:** Studio Beta 1.0.3 / Build 103. Código fuente, no lanzamiento público validado.
