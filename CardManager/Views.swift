@@ -148,6 +148,9 @@ struct AccountDetailView: View {
                     LabeledContent("Disponible", value: money(account.available))
                     LabeledContent("Corte", value: "Día \(account.closingDay)")
                     LabeledContent("Pago", value: "Día \(account.paymentDay)")
+                    Section("Planes y vencimientos") {
+                        AccountPlansSection(account: account)
+                    }
                     Section("Movimientos") {
                         ForEach(store.movements.filter { $0.accountID == accountID }) { m in
                             HStack { VStack(alignment: .leading) { Text(m.title); Text(m.date, style: .date).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("\(m.isPayment ? "−" : "+")\(money(m.amount))") }

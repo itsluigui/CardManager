@@ -8,6 +8,20 @@ extension Color {
     static let cmPanel = Color(red: 0.075, green: 0.090, blue: 0.085)
 }
 
+private func nextAccountDue(day: Int) -> Date? {
+    let cal = Calendar.current
+    let today = cal.startOfDay(for: .now)
+    for offset in 0...1 {
+        guard let month = cal.date(byAdding: .month, value: offset, to: today),
+              let range = cal.range(of: .day, in: .month, for: month) else { continue }
+        let d = min(max(day, 1), range.count)
+        var parts = cal.dateComponents([.year, .month], from: month)
+        parts.day = d
+        if let date = cal.date(from: parts), date >= today { return date }
+    }
+    return nil
+}
+
 private func peso(_ amount: Double) -> String { amount.formatted(.currency(code: "MXN")) }
 private func pct(_ amount: Double) -> String { amount.formatted(.percent.precision(.fractionLength(1))) }
 private func bankName(_ account: FinanceAccount) -> String {
@@ -190,9 +204,20 @@ struct PremiumHome: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(account.name).font(.subheadline.bold())
                                         Text("Pago · día \(account.paymentDay)").font(.caption2).foregroundStyle(.secondary)
+                                        if let due = nextAccountDue(day: account.paymentDay) {
+                                            PaymentCountdown(date: due)
+                                        }
                                     }
                                     Spacer()
-                                    Text(peso(account.used)).font(.caption.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        if let plan = store.plans(for: account.id).filter({ !$0.isFinished }).sorted(by: { $0.nextPaymentDate < $1.nextPaymentDate }).first {
+                                            Text(peso(plan.monthlyAmount)).font(.caption.bold())
+                                            Text("Cuota registrada").font(.caption2).foregroundStyle(.secondary)
+                                        } else {
+                                            Text(peso(account.used)).font(.caption.bold())
+                                            Text("Saldo total, no pago mínimo").font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }.lineLimit(1).minimumScaleFactor(0.7)
                                 }
                             }
                         }
@@ -314,8 +339,10 @@ struct PremiumAccounts: View {
 
 struct PremiumWallet: View {
     @EnvironmentObject private var store: FinanceStore
-    @State private var selected = 0
+    @State private var selectedID: UUID?
     @State private var adding = false
+    private var cards: [FinanceAccount] { store.accounts.filter { $0.kind != .loan } }
+    private var current: FinanceAccount? { cards.first(where: { $0.id == selectedID }) ?? cards.first }
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
@@ -323,47 +350,80 @@ struct PremiumWallet: View {
                     HStack {
                         CMTitle(text: "Wallet")
                         Spacer()
-                        Button { adding = true } label: { Image(systemName: "plus").foregroundStyle(Color.cmGreen).font(.title3).frame(width: 36, height: 36).background(Color.cmPanel, in: Circle()) }
+                        Button { adding = true } label: {
+                            Image(systemName: "plus").foregroundStyle(Color.cmGreen)
+                                .font(.title3).frame(width: 38, height: 38)
+                                .background(Color.cmPanel, in: Circle())
+                        }
                     }
-                    Text("Tus tarjetas, con el estilo de una cartera digital.").font(.caption).foregroundStyle(.secondary)
-                    if store.accounts.isEmpty {
-                        ContentUnavailableView("Wallet vacío", systemImage: "creditcard", description: Text("Agrega tarjetas para verlas aquí."))
+                    Text("Selecciona una tarjeta. Los préstamos se administran en Tarjetas.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if cards.isEmpty {
+                        ContentUnavailableView("Sin tarjetas", systemImage: "creditcard",
+                            description: Text("Agrega una tarjeta de crédito o débito."))
                     } else {
-                        let cards = store.accounts
-                        ZStack(alignment: .top) {
-                            ForEach(cards.indices, id: \.self) { i in
-                                let account = cards[i]
-                                Button { withAnimation(.spring(response: 0.4, dampingFraction: 0.82)) { selected = i } } label: {
-                                    CMCardFace(account: account, compact: true)
-                                        .scaleEffect(selected == i ? 1 : 0.965, anchor: .top)
-                                        .offset(y: CGFloat(i) * 48)
-                                        .zIndex(selected == i ? Double(cards.count + 1) : Double(i))
+                        // Individual selectable rows avoid overlapping hit-testing areas.
+                        VStack(spacing: 9) {
+                            ForEach(cards) { account in
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) { selectedID = account.id }
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        CMBrandBadge(account: account, size: 42)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(account.name).font(.subheadline.bold())
+                                            Text(account.kind.rawValue).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        if current?.id == account.id {
+                                            Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.cmGreen)
+                                        } else {
+                                            Image(systemName: "circle").foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    .padding(12)
+                                    .background(current?.id == account.id ? Color.cmGreen.opacity(0.12) : Color.cmPanel,
+                                                in: RoundedRectangle(cornerRadius: 15))
                                 }.buttonStyle(.plain)
                             }
-                        }.frame(height: 142 + CGFloat(cards.count - 1) * 48, alignment: .top)
-                            .padding(.top, 8)
-                        let current = cards[min(selected, cards.count - 1)]
-                        CMPanel {
-                            VStack(alignment: .leading, spacing: 12) {
-                                HStack { CMBrandBadge(account: current, size: 39); VStack(alignment: .leading) { Text(current.name).font(.headline); Text(current.kind.rawValue).font(.caption).foregroundStyle(.secondary) }; Spacer() }
-                                HStack {
-                                    VStack(alignment: .leading) { Text("Disponible").font(.caption).foregroundStyle(.secondary); Text(peso(current.available)).font(.headline).foregroundStyle(Color.cmGreen) }
-                                    Spacer()
-                                    VStack(alignment: .trailing) { Text("Utilizado").font(.caption).foregroundStyle(.secondary); Text(peso(current.used)).font(.headline) }
-                                }
-                                NavigationLink(destination: AccountDetailView(accountID: current.id)) {
-                                    HStack { Text("Ver y editar tarjeta"); Spacer(); Image(systemName: "arrow.up.right") }
-                                        .font(.subheadline.bold()).foregroundStyle(Color.cmGreen)
+                        }
+                        if let account = current {
+                            CMCardFace(account: account, compact: false)
+                                .id(account.id)
+                            CMPanel {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text(account.name).font(.headline)
+                                        Spacer()
+                                        Text(account.kind.rawValue).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    HStack {
+                                        VStack(alignment: .leading) {
+                                            Text("Disponible").font(.caption).foregroundStyle(.secondary)
+                                            Text(peso(account.available)).font(.headline).foregroundStyle(Color.cmGreen)
+                                        }
+                                        Spacer()
+                                        VStack(alignment: .trailing) {
+                                            Text("Utilizado").font(.caption).foregroundStyle(.secondary)
+                                            Text(peso(account.used)).font(.headline)
+                                        }
+                                    }
+                                    NavigationLink(destination: AccountDetailView(accountID: account.id)) {
+                                        HStack {
+                                            Text("Ver detalles, MSI y editar")
+                                            Spacer()
+                                            Image(systemName: "arrow.up.right")
+                                        }.font(.subheadline.bold()).foregroundStyle(Color.cmGreen)
+                                    }
                                 }
                             }
                         }
-                        Text("Las tarjetas son representaciones visuales. No se importan desde Apple Wallet ni contienen números bancarios reales.")
-                            .font(.caption2).foregroundStyle(.secondary)
                     }
                 }.padding(18)
-            }.background(Color.cmBackground.ignoresSafeArea())
-                .toolbar(.hidden, for: .navigationBar)
-                .sheet(isPresented: $adding) { AddAccountView() }
+            }
+            .background(Color.cmBackground.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $adding) { AddAccountView() }
         }
     }
 }
@@ -554,6 +614,12 @@ struct PremiumMore: View {
     @State private var calendar = false
     @State private var wallet = false
     @State private var showExport = false
+    @State private var showImport = false
+    @State private var confirmImport = false
+    @State private var selectedBackup: URL?
+    @State private var importMessage: String?
+    @State private var exportedBackup: URL?
+    @State private var exportError: String?
     @EnvironmentObject private var store: FinanceStore
     var body: some View {
         NavigationStack {
@@ -563,8 +629,14 @@ struct PremiumMore: View {
                     Text("CARD MANAGER  /  PRO").font(.caption2.bold()).tracking(2).foregroundStyle(Color.cmGreen)
                     NavigationLink(destination: PremiumWallet()) { moreRow("Wallet", "square.stack.fill", "Tarjetas apiladas") }
                     Button { calendar = true } label: { moreRow("Calendario", "calendar", "Fechas de corte y pago") }
-                    ShareLink(item: exportFile(), preview: SharePreview("Respaldo Card Manager")) {
-                        moreRow("Exportar respaldo", "square.and.arrow.up", "Copia JSON de tus datos")
+                    Button {
+                        do {
+                            exportedBackup = try store.exportBackup()
+                            showExport = true
+                        } catch { exportError = error.localizedDescription }
+                    } label: { moreRow("Exportar respaldo", "square.and.arrow.up", "Incluye cuentas, movimientos y mensualidades") }
+                    Button { showImport = true } label: {
+                        moreRow("Importar respaldo", "square.and.arrow.down", "Restaurar un archivo JSON")
                     }
                     CMPanel {
                         VStack(alignment: .leading, spacing: 8) {
@@ -573,11 +645,43 @@ struct PremiumMore: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    Text("Card Manager Pro · 1.5.0 · Vista previa de lanzamiento").font(.caption2).foregroundStyle(.secondary)
+                    Text("Card Manager Pro · 1.6.0 · Vista previa de lanzamiento").font(.caption2).foregroundStyle(.secondary)
                 }.padding(18)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(isPresented: $calendar) { PremiumCalendar() }
+                .sheet(isPresented: $showExport) {
+                    if let url = exportedBackup {
+                        NavigationStack {
+                            VStack(spacing: 22) {
+                                Image(systemName: "externaldrive.fill").font(.largeTitle).foregroundStyle(Color.cmGreen)
+                                Text("Respaldo preparado").font(.headline)
+                                ShareLink(item: url) { Label("Guardar o compartir respaldo", systemImage: "square.and.arrow.up") }
+                                Button("Cerrar") { showExport = false }
+                            }.padding().navigationTitle("Exportar").navigationBarTitleDisplayMode(.inline)
+                        }.preferredColorScheme(.dark)
+                    }
+                }
+                .fileImporter(isPresented: $showImport, allowedContentTypes: [.json]) { result in
+                    switch result {
+                    case .success(let url): selectedBackup = url; confirmImport = true
+                    case .failure(let error): importMessage = error.localizedDescription
+                    }
+                }
+                .confirmationDialog("¿Reemplazar todos los datos?", isPresented: $confirmImport, titleVisibility: .visible) {
+                    Button("Importar y reemplazar", role: .destructive) {
+                        guard let url = selectedBackup else { return }
+                        do { try store.importBackup(from: url); importMessage = "Respaldo restaurado correctamente." }
+                        catch { importMessage = error.localizedDescription }
+                        selectedBackup = nil
+                    }
+                    Button("Cancelar", role: .cancel) { selectedBackup = nil }
+                } message: {
+                    Text("Se reemplazarán todas las cuentas, movimientos y planes de pago actuales. Exporta primero un respaldo de seguridad.")
+                }
+                .alert("Respaldo", isPresented: Binding(get: { importMessage != nil || exportError != nil }, set: { if !$0 { importMessage = nil; exportError = nil } })) {
+                    Button("Aceptar") { importMessage = nil; exportError = nil }
+                } message: { Text(importMessage ?? exportError ?? "") }
         }
     }
     private func moreRow(_ title: String, _ symbol: String, _ subtitle: String) -> some View {
@@ -587,12 +691,5 @@ struct PremiumMore: View {
             Spacer()
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
         }.padding(15).foregroundStyle(.white).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
-    }
-    private func exportFile() -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("CardManager-Backup.json")
-        if let bytes = try? JSONEncoder().encode(FinanceData(accounts: store.accounts, movements: store.movements)) {
-            try? bytes.write(to: url, options: .atomic)
-        }
-        return url
     }
 }

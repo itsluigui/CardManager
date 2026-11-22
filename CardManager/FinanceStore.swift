@@ -13,6 +13,51 @@ import Combine
     }
 
     var accounts: [FinanceAccount] { data.accounts }
+    var plans: [InstallmentPlan] { data.plans }
+    func plans(for id: UUID) -> [InstallmentPlan] { data.plans.filter { $0.accountID == id } }
+    func addPlan(_ plan: InstallmentPlan) { data.plans.append(plan); save() }
+    func updatePlan(_ plan: InstallmentPlan) {
+        guard let i = data.plans.firstIndex(where: { $0.id == plan.id }) else { return }
+        data.plans[i] = plan
+        save()
+    }
+    func deletePlan(_ id: UUID) { data.plans.removeAll { $0.id == id }; save() }
+    func markInstallmentPaid(_ id: UUID) {
+        guard let index = data.plans.firstIndex(where: { $0.id == id }), !data.plans[index].isFinished else { return }
+        data.plans[index].paidMonths += 1
+        if let next = Calendar.current.date(byAdding: .month, value: 1, to: data.plans[index].nextPaymentDate) { data.plans[index].nextPaymentDate = next }
+        save()
+    }
+    enum BackupError: LocalizedError {
+        case invalidData, duplicateAccounts, missingAccounts
+        var errorDescription: String? {
+            switch self {
+            case .invalidData: return "El archivo no es un respaldo JSON compatible de Card Manager."
+            case .duplicateAccounts: return "El respaldo contiene identificadores de cuenta duplicados."
+            case .missingAccounts: return "El respaldo contiene movimientos o planes sin su cuenta correspondiente."
+            }
+        }
+    }
+    func exportBackup() throws -> URL {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("CardManager-Backup-\(Int(Date().timeIntervalSince1970)).json")
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]; encoder.dateEncodingStrategy = .deferredToDate
+        try encoder.encode(data).write(to: file, options: .atomic)
+        return file
+    }
+    func importBackup(from url: URL) throws {
+        let permitted = url.startAccessingSecurityScopedResource()
+        defer { if permitted { url.stopAccessingSecurityScopedResource() } }
+        let bytes = try Data(contentsOf: url)
+        guard let decoded = try? JSONDecoder().decode(FinanceData.self, from: bytes) else { throw BackupError.invalidData }
+        let ids = Set(decoded.accounts.map(\.id))
+        guard ids.count == decoded.accounts.count else { throw BackupError.duplicateAccounts }
+        guard decoded.movements.allSatisfy({ ids.contains($0.accountID) }) && decoded.plans.allSatisfy({ ids.contains($0.accountID) }) else { throw BackupError.missingAccounts }
+        // Validate before replacing, then atomically persist the complete new dataset.
+        let encoded = try JSONEncoder().encode(decoded)
+        try encoded.write(to: fileURL, options: .atomic)
+        data = decoded
+        objectWillChange.send()
+    }
     var movements: [FinanceMovement] { data.movements.sorted { $0.date > $1.date } }
     var totalDebt: Double { data.accounts.filter { $0.kind != .debit }.reduce(0) { $0 + $1.used } }
     var totalLimit: Double { data.accounts.filter { $0.kind == .credit }.reduce(0) { $0 + $1.limit } }
@@ -27,6 +72,7 @@ import Combine
     func deleteAccount(_ id: UUID) {
         data.accounts.removeAll { $0.id == id }
         data.movements.removeAll { $0.accountID == id }
+        data.plans.removeAll { $0.accountID == id }
         save()
     }
     func addMovement(_ movement: FinanceMovement) {

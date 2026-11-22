@@ -50,7 +50,34 @@ struct FinanceMovement: Identifiable, Codable {
     var isPayment: Bool = false
 }
 
+struct InstallmentPlan: Identifiable, Codable {
+    var id = UUID()
+    var accountID: UUID
+    var title: String
+    var principal: Double
+    var totalMonths: Int
+    var paidMonths: Int
+    var monthlyAmount: Double
+    var nextPaymentDate: Date
+    var isInterestFree: Bool
+    var notes: String = ""
+    var remainingMonths: Int { max(0, totalMonths - paidMonths) }
+    var remainingBalance: Double { max(0, Double(remainingMonths) * monthlyAmount) }
+    var isFinished: Bool { remainingMonths == 0 }
+}
+
 struct FinanceData: Codable {
     var accounts: [FinanceAccount] = []
     var movements: [FinanceMovement] = []
+    var plans: [InstallmentPlan] = []
+    enum CodingKeys: String, CodingKey { case accounts, movements, plans }
+    init(accounts: [FinanceAccount] = [], movements: [FinanceMovement] = [], plans: [InstallmentPlan] = []) {
+        self.accounts = accounts; self.movements = movements; self.plans = plans
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accounts = try c.decodeIfPresent([FinanceAccount].self, forKey: .accounts) ?? []
+        movements = try c.decodeIfPresent([FinanceMovement].self, forKey: .movements) ?? []
+        plans = try c.decodeIfPresent([InstallmentPlan].self, forKey: .plans) ?? []
+    }
 }
