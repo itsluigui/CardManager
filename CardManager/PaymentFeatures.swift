@@ -59,12 +59,15 @@ struct PlanRow: View {
     }
 }
 
+private struct PlanTimelineTarget: Identifiable { let id: UUID }
+
 struct AccountPlansSection: View {
     @EnvironmentObject private var store: FinanceStore
     let account: FinanceAccount
     @State private var activeSheet: PlanSheet?
     @State private var paymentPlanID: UUID?
     @State private var deletionID: UUID?
+    @State private var timelineID: UUID?
     private var accountPlans: [InstallmentPlan] { store.plans(for: account.id) }
 
     var body: some View {
@@ -87,8 +90,8 @@ struct AccountPlansSection: View {
                         Button { activeSheet = .edit(plan.id) } label: {
                             Label("Editar", systemImage: "pencil")
                         }.buttonStyle(.plain)
-                        NavigationLink(destination: InstallmentScheduleView(planID: plan.id)) {
-                            Label("Ver cuotas", systemImage: "calendar")
+                        Button { timelineID = plan.id } label: {
+                            Label("Calendario visual", systemImage: "calendar")
                         }.buttonStyle(.plain)
                         Spacer(minLength: 0)
                         Button(role: .destructive) { deletionID = plan.id } label: {
@@ -105,6 +108,10 @@ struct AccountPlansSection: View {
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(item: Binding<PlanTimelineTarget?>(
+            get: { timelineID.map { PlanTimelineTarget(id: $0) } },
+            set: { timelineID = $0?.id }
+        )) { target in InstallmentScheduleView(planID: target.id) }
         .sheet(item: $activeSheet) { target in
             switch target {
             case .add:

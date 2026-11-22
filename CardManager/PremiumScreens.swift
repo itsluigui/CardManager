@@ -139,6 +139,27 @@ struct CMCardFace: View {
     }
 }
 
+struct PremiumSectionHeading: View {
+    let eyebrow: String
+    let title: String
+    let subtitle: String
+    let icon: String
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(eyebrow.uppercased()).font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(2.2).foregroundStyle(Color.cmGreen)
+                Text(title).font(.system(size: 28, weight: .bold, design: .rounded))
+                Text(subtitle).font(.caption).foregroundStyle(.white.opacity(0.56))
+            }
+            Spacer(minLength: 0)
+            Image(systemName: icon).font(.title3.bold()).foregroundStyle(Color.cmGreen)
+                .frame(width: 46, height: 46)
+                .background(Color.cmGreen.opacity(0.10), in: RoundedRectangle(cornerRadius: 15))
+        }.padding(.bottom, 5)
+    }
+}
+
 struct PremiumHome: View {
     @EnvironmentObject private var store: FinanceStore
     @State private var showCalendar = false
@@ -341,7 +362,7 @@ struct PremiumAccounts: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack { CMTitle(text: "Mis tarjetas"); Spacer(); Button { adding = true } label: { Image(systemName: "plus").font(.headline).foregroundStyle(Color.cmGreen).frame(width: 38, height: 38).background(Color.cmPanel, in: Circle()) } }
+                    HStack { PremiumSectionHeading(eyebrow: "Tus productos", title: "Mis tarjetas", subtitle: "Crédito, débito y préstamos", icon: "creditcard.fill"); Spacer(); Button { adding = true } label: { Image(systemName: "plus").font(.headline).foregroundStyle(Color.cmGreen).frame(width: 38, height: 38).background(Color.cmPanel, in: Circle()) } }
                     HStack { Image(systemName: "magnifyingglass"); TextField("Buscar banco o tarjeta...", text: $search) }.font(.subheadline).padding(13).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 14))
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -381,7 +402,7 @@ struct PremiumAccounts: View {
                         }.buttonStyle(.plain)
                     }
                     if filtered.isEmpty { ContentUnavailableView("Sin resultados", systemImage: "creditcard", description: Text("Agrega una tarjeta o cambia los filtros.")) }
-                }.padding(18)
+                }.padding(18).padding(.bottom, 75)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(isPresented: $adding) { AddAccountView().preferredColorScheme(.dark) }
@@ -400,7 +421,7 @@ struct PremiumWallet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack {
-                        CMTitle(text: "Wallet")
+                        PremiumSectionHeading(eyebrow: "Tus tarjetas", title: "Wallet", subtitle: "Selecciona y consulta cada tarjeta", icon: "square.stack.3d.up.fill")
                         Spacer()
                         Button { adding = true } label: {
                             Image(systemName: "plus").foregroundStyle(Color.cmGreen)
@@ -496,7 +517,7 @@ struct PremiumMovements: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack { CMTitle(text: "Movimientos"); Spacer(); Button { adding = true } label: { Image(systemName: "plus").foregroundStyle(Color.cmGreen).frame(width: 38, height: 38).background(Color.cmPanel, in: Circle()) }.disabled(store.accounts.isEmpty) }
+                    HStack { PremiumSectionHeading(eyebrow: "Tu actividad", title: "Movimientos", subtitle: "Ingresos, gastos y pagos", icon: "arrow.left.arrow.right"); Spacer(); Button { adding = true } label: { Image(systemName: "plus").foregroundStyle(Color.cmGreen).frame(width: 38, height: 38).background(Color.cmPanel, in: Circle()) }.disabled(store.accounts.isEmpty) }
                     HStack { Image(systemName: "magnifyingglass"); TextField("Buscar movimiento...", text: $search) }.font(.subheadline).padding(13).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 14))
                     HStack(spacing: 9) {
                         ForEach(["Todos", "Compras", "Pagos"], id: \.self) { item in
@@ -512,7 +533,7 @@ struct PremiumMovements: View {
                             .contextMenu { Button("Eliminar movimiento", role: .destructive) { pendingDelete = m.id } }
                     }
                     if filtered.isEmpty { ContentUnavailableView("Sin movimientos", systemImage: "arrow.left.arrow.right", description: Text("Registra tus compras y pagos manualmente.")) }
-                }.padding(18)
+                }.padding(18).padding(.bottom, 75)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(isPresented: $adding) { AddMovementView() }
@@ -531,7 +552,7 @@ struct PremiumAnalytics: View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
-                    CMTitle(text: "Análisis")
+                    PremiumSectionHeading(eyebrow: "Indicadores", title: "Análisis", subtitle: "Tu panorama crediticio y financiero", icon: "chart.bar.xaxis")
                     CMPanel {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Uso de crédito").font(.headline)
@@ -615,7 +636,7 @@ struct PremiumAnalytics: View {
                     }
                     Text("Los indicadores son orientativos y usan tus datos manuales. No son una calificación oficial ni garantizan cambios en Buró de Crédito.")
                         .font(.caption2).foregroundStyle(.secondary)
-                }.padding(18)
+                }.padding(18).padding(.bottom, 75)
             }.background(Color.cmBackground.ignoresSafeArea()).toolbar(.hidden, for: .navigationBar)
         }
     }
@@ -682,7 +703,7 @@ struct PremiumCalendar: View {
                     }
                     Text("Las fechas 29, 30 y 31 pueden no existir en ciertos meses. Consulta tu estado de cuenta para confirmar vencimientos.")
                         .font(.caption2).foregroundStyle(.secondary)
-                }.padding(18)
+                }.padding(18).padding(.bottom, 75)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .navigationTitle("Calendario").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Cerrar") { dismiss() } } }
@@ -706,7 +727,7 @@ struct PremiumMore: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    CMTitle(text: "Más")
+                    PremiumSectionHeading(eyebrow: "Configuración", title: "Más", subtitle: "Herramientas, seguridad y respaldos", icon: "slider.horizontal.3")
                     Text("CARD MANAGER  /  PRO").font(.caption2.bold()).tracking(2).foregroundStyle(Color.cmGreen)
                     NavigationLink(destination: PremiumWallet()) { moreRow("Wallet", "square.stack.fill", "Tarjetas seleccionables") }
                     NavigationLink(destination: DebitAccountsView()) { moreRow("Mi dinero y débito", "banknote.fill", "Saldos y transferencias propias") }
@@ -729,8 +750,8 @@ struct PremiumMore: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    Text("Card Manager Pro · 1.7.0 · Versión de prueba").font(.caption2).foregroundStyle(.secondary)
-                }.padding(18)
+                    Text("Card Manager Pro · 1.8.0 · Versión de prueba").font(.caption2).foregroundStyle(.secondary)
+                }.padding(18).padding(.bottom, 75)
             }.background(Color.cmBackground.ignoresSafeArea())
                 .toolbar(.hidden, for: .navigationBar)
                 .sheet(isPresented: $calendar) { PremiumCalendar() }

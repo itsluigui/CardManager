@@ -210,56 +210,143 @@ struct LoanOverviewView: View {
     }
 }
 
+// Timeline de pagos: toda acción financiera requiere una confirmación explícita.
 struct InstallmentScheduleView: View {
     @EnvironmentObject private var store: FinanceStore
+    @Environment(\.dismiss) private var dismiss
     let planID: UUID
     @State private var editing: PaymentScheduleOverride?
+    @State private var paymentTarget: PaymentScheduleOverride?
+    @State private var settleAll = false
     private var plan: InstallmentPlan? { store.plans.first(where: { $0.id == planID }) }
+    private func money(_ n: Double) -> String { n.formatted(.currency(code: "MXN")) }
+    private func unpaid(_ entry: PaymentScheduleOverride) -> Double { max(0, entry.amount - entry.paidAmount) }
+    private func finished(_ entry: PaymentScheduleOverride) -> Bool { unpaid(entry) < 0.005 }
     var body: some View {
-        ScrollView {
-            if let plan = plan {
-                let entries = store.schedule(for: plan)
-                let paid = entries.reduce(0) { $0 + $1.paidAmount }
-                let total = entries.reduce(0) { $0 + $1.amount }
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(plan.title).font(.title2.bold())
-                    CMPanel {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                VStack(alignment: .leading) { Text("Pagado registrado").font(.caption).foregroundStyle(.secondary); Text(cmMoney(paid)).font(.headline).foregroundStyle(Color.cmGreen) }
-                                Spacer()
-                                VStack(alignment: .trailing) { Text("Por pagar").font(.caption).foregroundStyle(.secondary); Text(cmMoney(max(0,total-paid))).font(.headline) }
+        NavigationStack {
+            Group {
+                if let plan = plan {
+                    let entries = store.schedule(for: plan)
+                    let remaining = entries.reduce(0) { $0 + unpaid($1) }
+                    let completed = entries.filter { finished($0) }.count
+                    let next = entries.first(where: { !finished($0) })?.installment
+                    VStack(spacing: 0) {
+                        ScrollView(showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 20) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("\(entries.count - completed) pagos restantes")
+                                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                                    Text("Pagos programados pendientes · \(money(remaining))")
+                                        .font(.subheadline).foregroundStyle(.white.opacity(0.66))
+                                    Text(plan.title).font(.caption).foregroundStyle(Color.cmGreen)
+                                }.padding(.top, 10)
+                                HStack(spacing: 12) {
+                                    summary("Pagado", money(entries.reduce(0) { $0 + $1.paidAmount }), "checkmark.circle.fill")
+                                    summary("Avance", "\(completed) de \(entries.count)", "chart.bar.fill")
+                                }
+                                ForEach(entries) { entry in
+                                    HStack(spacing: 14) {
+                                        ZStack {
+                                            Circle().fill(finished(entry) ? Color.cmGreen : Color.white.opacity(0.12))
+                                            if finished(entry) {
+                                                Image(systemName: "checkmark").font(.headline.bold()).foregroundStyle(.black)
+                                            } else {
+                                                Text("\(entry.installment)").font(.headline.bold()).foregroundStyle(.white.opacity(0.75))
+                                            }
+                                        }
+                                        .frame(width: 44, height: 44)
+                                        .overlay(Circle().stroke(entry.installment == next ? Color.blue : .clear, lineWidth: 3).padding(-3))
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(entry.dueDate.formatted(.dateTime.day().month(.wide).year()))
+                                                .font(.subheadline.bold()).lineLimit(2)
+                                            if entry.paidAmount > 0 && !finished(entry) {
+                                                Text("Abonado \(money(entry.paidAmount))")
+                                                    .font(.caption2).foregroundStyle(Color.cmGreen)
+                                            } else if !finished(entry) && entry.dueDate < Calendar.current.startOfDay(for: .now) {
+                                                Text("Vencido").font(.caption2.bold()).foregroundStyle(.orange)
+                                            }
+                                        }
+                                        Spacer(minLength: 3)
+                                        VStack(alignment: .trailing, spacing: 5) {
+                                            if entry.installment == next && !finished(entry) {
+                                                Button("Pagar \(money(unpaid(entry)))") { paymentTarget = entry }
+                                                    .font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 9)
+                                                    .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                                                    .buttonStyle(.plain)
+                                            } else {
+                                                Text(money(entry.amount)).font(.subheadline).monospacedDigit()
+                                            }
+                                            Button { editing = entry } label: {
+                                                Label("Editar", systemImage: "pencil").font(.caption2)
+                                            }.buttonStyle(.plain).foregroundStyle(Color.cmGreen)
+                                        }
+                                    }
+                                    .padding(.vertical, 9)
+                                    .accessibilityElement(children: .contain)
+                                }
+                                Text("El total mostrado es la suma de cuotas pendientes, no necesariamente el saldo de liquidación oficial. Los pagos no modifican automáticamente el saldo de la cuenta.")
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }.padding(.horizontal, 20).padding(.bottom, 18)
+                        }
+                        VStack(spacing: 0) {
+                            Divider().overlay(.white.opacity(0.08))
+                            Button { settleAll = true } label: {
+                                Text("Registrar liquidación de cuotas")
+                                    .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 17)
+                                    .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 17))
+                            }.buttonStyle(.plain).disabled(remaining < 0.005)
+                                .padding(.horizontal, 20).padding(.vertical, 12)
+                        }.background(Color.cmBackground)
+                    }
+                    .confirmationDialog("Registrar pago de cuota", isPresented: Binding(
+                        get: { paymentTarget != nil }, set: { if !$0 { paymentTarget = nil } }
+                    ), titleVisibility: .visible) {
+                        Button("Confirmar pago") {
+                            if let target = paymentTarget {
+                                store.recordInstallmentPayment(planID: planID, installment: target.installment,
+                                    amount: unpaid(target), date: .now)
                             }
-                            ProgressView(value: paid, total: max(1,total)).tint(.cmGreen)
-                            Text("\(entries.filter { $0.paidAmount >= $0.amount - 0.005 }.count) de \(entries.count) cuotas completas")
-                                .font(.caption).foregroundStyle(.secondary)
+                            paymentTarget = nil
+                        }
+                        Button("Cancelar", role: .cancel) { paymentTarget = nil }
+                    } message: {
+                        if let target = paymentTarget {
+                            Text("Registrar \(money(unpaid(target))) en la cuota \(target.installment). No se cargará dinero ni cambiará automáticamente el saldo bancario.")
                         }
                     }
-                    ForEach(entries) { entry in
-                        Button { editing = entry } label: {
-                            CMPanel {
-                                HStack(spacing: 12) {
-                                    Image(systemName: entry.paidAmount >= entry.amount - 0.005 ? "checkmark.circle.fill" : "circle.dotted")
-                                        .font(.title2).foregroundStyle(entry.paidAmount >= entry.amount - 0.005 ? Color.cmGreen : .secondary)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Cuota \(entry.installment) · \(entry.dueDate.formatted(date: .abbreviated, time: .omitted))")
-                                            .font(.subheadline.bold())
-                                        Text("Pagado \(cmMoney(entry.paidAmount)) de \(cmMoney(entry.amount))")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "pencil.circle").foregroundStyle(Color.cmGreen)
-                                }
+                    .confirmationDialog("¿Marcar todas las cuotas pendientes como pagadas?", isPresented: $settleAll, titleVisibility: .visible) {
+                        Button("Confirmar liquidación de cuotas") {
+                            // No side effects until the user explicitly confirms.
+                            for entry in entries where unpaid(entry) > 0.005 {
+                                store.recordInstallmentPayment(planID: planID, installment: entry.installment,
+                                    amount: unpaid(entry), date: .now)
                             }
-                        }.buttonStyle(.plain)
+                        }
+                        Button("Cancelar", role: .cancel) { }
+                    } message: {
+                        Text("Se registrarán \(money(remaining)) como cuotas pagadas. Esto no es un pago bancario real ni actualiza automáticamente el saldo de la cuenta.")
                     }
-                    Text("Los cambios de cuota no ajustan automáticamente el saldo de la tarjeta o préstamo. Registra por separado el movimiento real para mantener el balance correcto.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding(18)
-            } else { ContentUnavailableView("Plan no encontrado", systemImage: "calendar.badge.exclamationmark") }
-        }.background(Color.cmBackground.ignoresSafeArea())
-            .navigationTitle("Calendario de cuotas").navigationBarTitleDisplayMode(.inline)
+                } else {
+                    ContentUnavailableView("Plan no encontrado", systemImage: "calendar.badge.exclamationmark")
+                }
+            }
+            .background(Color.cmBackground.ignoresSafeArea())
+            .navigationTitle("Calendario de pagos")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Cerrar") { dismiss() } } }
             .sheet(item: $editing) { item in InstallmentEditorView(entry: item) }
+        }.preferredColorScheme(.dark)
+    }
+    private func summary(_ title: String, _ value: String, _ symbol: String) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: symbol).foregroundStyle(Color.cmGreen)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.caption2).foregroundStyle(.secondary)
+                Text(value).font(.subheadline.bold()).minimumScaleFactor(0.75).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }.padding(12).frame(maxWidth: .infinity)
+            .background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 15))
     }
 }
 
