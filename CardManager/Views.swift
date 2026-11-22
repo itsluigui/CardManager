@@ -20,31 +20,63 @@ struct RootView: View {
 
 struct DashboardView: View {
     @EnvironmentObject private var store: FinanceStore
+    private let accent = Color(red: 0.63, green: 0.99, blue: 0.30)
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Tu panorama financiero").font(.headline)
-                    HStack(spacing: 12) {
-                        SummaryCard(title: "Deuda total", value: money(store.totalDebt), symbol: "chart.line.downtrend.xyaxis")
-                        SummaryCard(title: "Crédito disponible", value: money(max(0, store.totalLimit - store.totalUsedCredit)), symbol: "checkmark.circle")
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("CARD MANAGER  /  PRO").font(.caption2.bold()).tracking(2.8).foregroundStyle(accent)
+                            Text("Tu dinero, bajo control.").font(.title2.bold()).foregroundStyle(.white)
+                        }
+                        Spacer()
+                        Image(systemName: "chart.xyaxis.line").font(.title3).foregroundStyle(accent)
+                            .frame(width: 44, height: 44).background(.white.opacity(0.08), in: Circle())
                     }
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 26).fill(LinearGradient(colors: [Color(red: 0.11,green: 0.19,blue: 0.12), Color(red: 0.035,green: 0.055,blue: 0.045)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        MarketBackdrop().opacity(0.36).clipShape(RoundedRectangle(cornerRadius: 26))
+                        VStack(alignment: .leading, spacing: 16) {
+                            Label("PANORAMA FINANCIERO", systemImage: "circle.grid.cross").font(.caption2.bold()).tracking(1.7).foregroundStyle(accent)
+                            Text(money(store.totalLimit - store.totalUsedCredit)).font(.system(size: 35, weight: .bold, design: .rounded)).minimumScaleFactor(0.65).lineLimit(1).foregroundStyle(.white)
+                            Text("Crédito disponible").font(.subheadline).foregroundStyle(.white.opacity(0.7))
+                            Rectangle().fill(.white.opacity(0.15)).frame(height: 1)
+                            HStack {
+                                VStack(alignment: .leading, spacing: 5) { Text("DEUDA ACTUAL").font(.caption2).foregroundStyle(.white.opacity(0.6)); Text(money(store.totalDebt)).font(.headline).foregroundStyle(.white) }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 5) { Text("LÍMITE TOTAL").font(.caption2).foregroundStyle(.white.opacity(0.6)); Text(money(store.totalLimit)).font(.headline).foregroundStyle(accent) }
+                            }
+                        }.padding(24)
+                    }.frame(height: 240)
                     let ratio = store.totalLimit > 0 ? store.totalUsedCredit / store.totalLimit : 0
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack { Text("Uso de crédito"); Spacer(); Text(ratio.formatted(.percent.precision(.fractionLength(1)))) }
-                        ProgressView(value: min(1, ratio)).tint(ratio > 0.5 ? .orange : .green)
-                        Text(ratio <= 0.3 ? "Dentro de tu objetivo de 30%" : "Referencia: procura mantener el uso bajo 30% cuando sea posible")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                    MarketBackdrop().frame(height: 72).clipped().cornerRadius(14)
-                    Text("Próximos días de pago").font(.headline)
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack { Text("Salud de tu crédito").font(.headline); Spacer(); Text(ratio.formatted(.percent.precision(.fractionLength(0)))).font(.headline).foregroundStyle(ratio > 0.5 ? .orange : accent) }
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(.white.opacity(0.10))
+                                Capsule().fill(ratio > 0.5 ? Color.orange : accent).frame(width: g.size.width * min(1, max(0, ratio)))
+                            }
+                        }.frame(height: 9)
+                        Text(ratio <= 0.3 ? "Uso dentro de la referencia del 30%." : "Puedes reducir tu porcentaje de utilización.").font(.caption).foregroundStyle(.white.opacity(0.55))
+                    }.padding(20).background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 22))
+                    HStack { Text("Tus tarjetas").font(.title3.bold()); Spacer(); Text("\(store.accounts.count) activas").font(.caption).foregroundStyle(.secondary) }
+                    if let first = store.accounts.first { WalletCard(account: first) }
+                    else { Text("Agrega tu primera tarjeta desde Tarjetas.").foregroundStyle(.secondary).padding() }
+                    HStack { Text("Próximos pagos").font(.title3.bold()); Spacer(); Image(systemName: "calendar").foregroundStyle(accent) }
                     ForEach(store.accounts.filter { $0.kind != .debit }) { a in
-                        HStack { Text(a.name); Spacer(); Text("Día \(a.paymentDay)").foregroundStyle(.secondary) }
-                            .padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        HStack(spacing: 14) {
+                            Image(systemName: "calendar.badge.clock").foregroundStyle(accent).frame(width: 40, height: 40).background(accent.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading, spacing: 4) { Text(a.name).font(.subheadline.bold()); Text("Fecha de pago: día \(a.paymentDay)").font(.caption).foregroundStyle(.secondary) }
+                            Spacer()
+                            Text(money(a.used)).font(.subheadline.bold())
+                        }.padding(13).background(Color.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 17))
                     }
-                    if store.accounts.isEmpty { ContentUnavailableView("Agrega tu primera tarjeta", systemImage: "creditcard", description: Text("Empieza en la pestaña Tarjetas.")) }
-                }.padding()
-            }.navigationTitle("Card Manager")
+                    Text("Los datos bursátiles de fondo son ilustrativos.").font(.caption2).foregroundStyle(.secondary)
+                }.padding(18)
+            }
+            .background(Color(red: 0.035,green: 0.045,blue: 0.04).ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
