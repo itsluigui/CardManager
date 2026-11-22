@@ -15,6 +15,7 @@ struct PlanRow: View {
     @EnvironmentObject private var store: FinanceStore
     let plan: InstallmentPlan
     @State private var editing = false
+    @State private var confirmPayment = false
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
@@ -44,12 +45,21 @@ struct PlanRow: View {
                 Button("Editar") { editing = true }
                     .font(.caption.bold()).foregroundStyle(Color.cmGreen)
                 if !plan.isFinished {
-                    Button("Marcar cuota pagada") { store.markInstallmentPaid(plan.id) }
+                    Button("Marcar cuota pagada") { confirmPayment = true }
                         .font(.caption.bold()).foregroundStyle(Color.cmGreen)
                 }
             }
         }.padding(14).background(Color.cmPanel, in: RoundedRectangle(cornerRadius: 16))
+            .buttonStyle(.borderless)
             .sheet(isPresented: $editing) { EditPlanView(plan: plan) }
+            .confirmationDialog("Confirmar mensualidad pagada", isPresented: $confirmPayment, titleVisibility: .visible) {
+                Button("Confirmar pago de " + mxn(plan.monthlyAmount)) {
+                    store.markInstallmentPaid(plan.id)
+                }
+                Button("Cancelar", role: .cancel) { }
+            } message: {
+                Text("Se registrará una mensualidad pagada de \(plan.title). Esta acción no modifica automáticamente la deuda de la cuenta.")
+            }
     }
 }
 
@@ -75,6 +85,7 @@ struct AccountPlansSection: View {
             Text("Marcar una cuota como pagada actualiza el plan, pero no cambia automáticamente el saldo de la cuenta. Registra también el pago en Movimientos para actualizar la deuda.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
+        .buttonStyle(.borderless)
         .sheet(isPresented: $adding) { AddPlanView(account: account) }
     }
 }

@@ -150,6 +150,7 @@ struct AccountDetailView: View {
                     LabeledContent("Pago", value: "Día \(account.paymentDay)")
                     Section("Planes y vencimientos") {
                         AccountPlansSection(account: account)
+                            .buttonStyle(.borderless)
                     }
                     Section("Movimientos") {
                         ForEach(store.movements.filter { $0.accountID == accountID }) { m in
