@@ -1,0 +1,21 @@
+name: CardManager
+options:
+  bundleIdPrefix: com.cardmanager.personal
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    IPHONEOS_DEPLOYMENT_TARGET: 17.0
+    TARGETED_DEVICE_FAMILY: 1
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    CODE_SIGN_STYLE: Automatic
+targets:
+  CardManager:
+    type: application
+    platform: iOS
+    sources:
+      - CardManager
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cardmanager.personal.app
+        ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
