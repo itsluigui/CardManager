@@ -8,13 +8,14 @@ private func money(_ value: Double) -> String {
 struct RootView: View {
     var body: some View {
         TabView {
-            DashboardView().tabItem { Label("Inicio", systemImage: "house.fill") }
-            AccountsView().tabItem { Label("Tarjetas", systemImage: "creditcard.fill") }
-            WalletView().tabItem { Label("Wallet", systemImage: "square.stack.fill") }
-            MovementsView().tabItem { Label("Movimientos", systemImage: "arrow.left.arrow.right") }
-            InsightsView().tabItem { Label("Análisis", systemImage: "chart.bar.fill") }
+            PremiumHome().tabItem { Label("Inicio", systemImage: "house.fill") }
+            PremiumAccounts().tabItem { Label("Tarjetas", systemImage: "creditcard.fill") }
+            PremiumMovements().tabItem { Label("Movimientos", systemImage: "arrow.left.arrow.right") }
+            PremiumAnalytics().tabItem { Label("Análisis", systemImage: "chart.bar.fill") }
+            PremiumMore().tabItem { Label("Más", systemImage: "ellipsis") }
         }
-        .tint(.green)
+        .tint(Color.cmGreen)
+        .preferredColorScheme(.dark)
     }
 }
 

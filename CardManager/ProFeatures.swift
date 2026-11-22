@@ -124,7 +124,7 @@ struct WalletCard: View {
     }
 }
 
-struct WalletView: View {
+struct LegacyWalletView: View {
     @EnvironmentObject private var store: FinanceStore
     var body: some View {
         NavigationStack {
