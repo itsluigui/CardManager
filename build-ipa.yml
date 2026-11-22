@@ -22,6 +22,10 @@ jobs:
           grep -nF "PremiumHome().tabItem" CardManager/Views.swift
           test -f CardManager/PremiumScreens.swift
           grep -q "struct PremiumWallet: View" CardManager/PremiumScreens.swift
+          test -f CardManager/FinancePlusViews.swift
+          grep -q 'struct InstallmentScheduleView: View' CardManager/FinancePlusViews.swift
+          grep -q 'struct CreditHealthView: View' CardManager/FinancePlusViews.swift
+          grep -q 'struct DebitAccountsView: View' CardManager/FinancePlusViews.swift
           test -f CardManager/ProFeatures.swift
           grep -q "struct WalletView: View" CardManager/ProFeatures.swift
           echo "SOURCE HASH:"
